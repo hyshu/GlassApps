@@ -1,0 +1,43 @@
+# Local-only app copies
+*.local/
+*.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Android Studio / IntelliJ
+*.iml
+**/.idea/caches/
+**/.idea/libraries/
+**/.idea/modules.xml
+**/.idea/workspace.xml
+**/.idea/navEditor.xml
+**/.idea/assetWizardSettings.xml
+**/.idea/deploymentTargetSelector.xml
+**/.idea/shelf/
+
+# Android / Gradle
+.gradle/
+.kotlin/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Build outputs and logs
+*.apk
+*.ap_
+*.aab
+*.log
+
+# Signing secrets
+*.p12
+*.cer
+*.certSigningRequest
+
+# GlassDisplay host artifacts
+GlassDisplay/host/sender/GlassDisplaySender.app/
+GlassDisplay/host/*.zip
