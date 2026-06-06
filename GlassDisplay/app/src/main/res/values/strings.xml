@@ -1,0 +1,31 @@
+<resources>
+    <string name="app_name">Glass Display</string>
+    <string name="status_waiting_title">Waiting for host</string>
+    <string name="status_waiting_detail">Keep host/scripts/glass-stream.sh running. It will use tcp:%1$d or BLE automatically.</string>
+    <string name="status_resolution_switching_title">Switching resolution</string>
+    <string name="status_resolution_switching_detail">Applying %1$s on the host display.</string>
+    <string name="status_resolution_pending_title">Resolution switch pending</string>
+    <string name="status_resolution_pending_detail">%1$s is queued. Waiting for the host sender.</string>
+    <string name="status_connected_title">Receiving frames</string>
+    <string name="status_connected_detail">%1$dx%2$d  frame #%3$d  %4$dB compressed  %5$dB packed</string>
+    <string name="status_connected_detail_with_fps">%1$dx%2$d  %3$.1f fps  frame #%4$d  %5$dB compressed  %6$dB packed</string>
+    <string name="menu_title">Menu</string>
+    <string name="menu_title_resolution">Resolution</string>
+    <string name="menu_title_display_mode">Display mode</string>
+    <string name="menu_item_fps">FPS overlay</string>
+    <string name="menu_item_fps_state">FPS overlay: %1$s</string>
+    <string name="state_on">ON</string>
+    <string name="state_off">OFF</string>
+    <string name="menu_item_resolution">Resolution</string>
+    <string name="menu_item_resolution_480x640">Resolution 480x640</string>
+    <string name="menu_item_resolution_480x320">Resolution 480x320</string>
+    <string name="menu_item_resolution_off">Resolution off</string>
+    <string name="menu_item_display_mode">Display mode</string>
+    <string name="menu_item_display_mode_state">Display mode: %1$s</string>
+    <string name="display_mode_full">Full</string>
+    <string name="display_mode_split">Split</string>
+    <string name="menu_item_display_full">Display full</string>
+    <string name="menu_item_display_split">Display split</string>
+    <string name="menu_item_back">Back</string>
+    <string name="menu_item_close">Close menu</string>
+</resources>

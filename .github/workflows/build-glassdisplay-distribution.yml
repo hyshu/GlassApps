@@ -1,0 +1,198 @@
+name: Build GlassDisplay Distribution
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-glassdisplay-distribution.yml"
+      - "GlassDisplay/app/**"
+      - "!GlassDisplay/app/distribution/GlassDisplay.apk"
+      - "GlassDisplay/build.gradle.kts"
+      - "GlassDisplay/settings.gradle.kts"
+      - "GlassDisplay/gradle/**"
+      - "GlassDisplay/gradlew"
+      - "GlassDisplay/gradlew.bat"
+      - "GlassDisplay/host/**"
+      - "!GlassDisplay/host/sender/GlassDisplaySender.app/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  android-apk:
+    name: Build GlassDisplay.apk
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Build debug APK
+        working-directory: GlassDisplay
+        run: |
+          ./gradlew --no-daemon app:assembleDebug
+
+      - name: Verify APK signature
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose --print-certs GlassDisplay/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: glassdisplay-apk
+          path: GlassDisplay/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  macos-sender:
+    name: Build GlassDisplaySender.app
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Import code signing certificate
+        env:
+          GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE: ${{ secrets.GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE }}
+          GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE_PASSWORD }}
+          GLASSDISPLAY_MACOS_CODESIGN_IDENTITY: ${{ secrets.GLASSDISPLAY_MACOS_CODESIGN_IDENTITY }}
+          GLASSDISPLAY_MACOS_KEYCHAIN_PASSWORD: ${{ secrets.GLASSDISPLAY_MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE" ]]; then
+            echo "Missing repository secret: GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE" >&2
+            exit 1
+          fi
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/glassdisplay-codesign.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/glassdisplay-codesign.keychain-db"
+          KEYCHAIN_PASSWORD="${GLASSDISPLAY_MACOS_KEYCHAIN_PASSWORD:-$(uuidgen)}"
+
+          printf '%s' "$GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE" | base64 -D > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$GLASSDISPLAY_MACOS_CODESIGN_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          codesign_identity="$GLASSDISPLAY_MACOS_CODESIGN_IDENTITY"
+          if [[ -z "$codesign_identity" ]]; then
+            codesign_identity="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F '"' '/"[^"]+"/ { print $2; exit }')"
+          fi
+          if [[ -z "$codesign_identity" ]]; then
+            echo "No code signing identity found in imported certificate" >&2
+            exit 1
+          fi
+
+          echo "GLASS_DISPLAY_CODESIGN_IDENTITY=$codesign_identity" >> "$GITHUB_ENV"
+          echo "GLASS_DISPLAY_CODESIGN_TIMESTAMP=1" >> "$GITHUB_ENV"
+
+      - name: Build app bundle
+        working-directory: GlassDisplay
+        run: |
+          host/sender/build.sh --force
+
+      - name: Verify app signature
+        env:
+          GLASSDISPLAY_MACOS_CODESIGN_EXPECTED_AUTHORITY: ${{ secrets.GLASSDISPLAY_MACOS_CODESIGN_EXPECTED_AUTHORITY }}
+        run: |
+          codesign --verify --deep --strict --verbose=2 GlassDisplay/host/sender/GlassDisplaySender.app
+          signature_info="$(codesign -dv --verbose=4 GlassDisplay/host/sender/GlassDisplaySender.app 2>&1)"
+          if echo "$signature_info" | grep -q "Signature=adhoc"; then
+            echo "GlassDisplaySender.app was ad-hoc signed, not certificate signed" >&2
+            exit 1
+          fi
+          if [[ -n "$GLASSDISPLAY_MACOS_CODESIGN_EXPECTED_AUTHORITY" ]]; then
+            if ! echo "$signature_info" | grep -Fqi "Authority=$GLASSDISPLAY_MACOS_CODESIGN_EXPECTED_AUTHORITY"; then
+              echo "GlassDisplaySender.app was not signed by the expected authority" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Package sender app artifact
+        run: |
+          mkdir -p "$RUNNER_TEMP/dist"
+          tar -C GlassDisplay/host/sender -czf "$RUNNER_TEMP/dist/GlassDisplaySender.app.tgz" GlassDisplaySender.app
+
+      - name: Upload sender app artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: glassdisplay-sender-app
+          path: ${{ runner.temp }}/dist/GlassDisplaySender.app.tgz
+          if-no-files-found: error
+
+  commit-distribution:
+    name: Commit distribution artifacts
+    runs-on: ubuntu-latest
+    needs:
+      - android-apk
+      - macos-sender
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: glassdisplay-apk
+          path: ${{ runner.temp }}/artifacts/apk
+
+      - name: Download sender app artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: glassdisplay-sender-app
+          path: ${{ runner.temp }}/artifacts/sender
+
+      - name: Install distribution artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p GlassDisplay/app/distribution
+          cp "$RUNNER_TEMP/artifacts/apk/app-debug.apk" GlassDisplay/app/distribution/GlassDisplay.apk
+          rm -rf GlassDisplay/host/sender/GlassDisplaySender.app
+          tar -C GlassDisplay/host/sender -xzf "$RUNNER_TEMP/artifacts/sender/GlassDisplaySender.app.tgz"
+
+      - name: Commit generated distribution artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f GlassDisplay/app/distribution/GlassDisplay.apk GlassDisplay/host/sender/GlassDisplaySender.app
+          if git diff --cached --quiet; then
+            echo "GlassDisplay distribution unchanged"
+          else
+            git commit -m "Build GlassDisplay distribution"
+            git pull --rebase origin main
+            git push
+          fi

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>bio.aq.glassdisplay.stream</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>__STREAM_SCRIPT__</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__WORKING_DIRECTORY__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <key>PATH</key>
+        <string>__PATH__</string>
+        <key>GLASS_DISPLAY_SENDER_BIN</key>
+        <string>__SENDER_BIN__</string>
+        <key>GLASS_STREAM_FAST_FAILURE_DELAY</key>
+        <string>15</string>
+        <key>GLASS_SCREEN_CAPTURE_AUTO_PROMPT</key>
+        <string>0</string>
+        <key>GLASS_SCREEN_CAPTURE_PREFLIGHT</key>
+        <string>0</string>
+    </dict>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__STDOUT_PATH__</string>
+
+    <key>StandardErrorPath</key>
+    <string>__STDERR_PATH__</string>
+</dict>
+</plist>

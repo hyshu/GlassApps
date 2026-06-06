@@ -1,0 +1,174 @@
+name: GlassDisplay CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/glassdisplay-ci.yml"
+      - "GlassDisplay/**"
+      - "!GlassDisplay/app/distribution/GlassDisplay.apk"
+      - "!GlassDisplay/host/sender/GlassDisplaySender.app/**"
+  pull_request:
+    paths:
+      - ".github/workflows/glassdisplay-ci.yml"
+      - "GlassDisplay/**"
+      - "!GlassDisplay/app/distribution/GlassDisplay.apk"
+      - "!GlassDisplay/host/sender/GlassDisplaySender.app/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  android:
+    name: Android emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: GlassDisplay
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36"
+
+      - name: Build app and tests
+        run: |
+          ./gradlew --no-daemon \
+            app:assembleDebug \
+            app:testDebugUnitTest \
+            app:assembleDebugAndroidTest
+
+      - name: Run instrumentation tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: cd GlassDisplay && ./gradlew --no-daemon app:connectedDebugAndroidTest
+
+      - name: Upload Android test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: glassdisplay-android-test-reports
+          path: |
+            GlassDisplay/app/build/reports/tests/
+            GlassDisplay/app/build/reports/androidTests/
+            GlassDisplay/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+
+  macos:
+    name: macOS sender build
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: GlassDisplay
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build sender app
+        run: |
+          GLASS_DISPLAY_SENDER_APP="$RUNNER_TEMP/GlassDisplaySender.app" host/sender/build.sh --force
+
+      - name: Verify sender app
+        run: |
+          app="$RUNNER_TEMP/GlassDisplaySender.app"
+          binary="$app/Contents/MacOS/glass_display_sender"
+
+          test -x "$binary"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          "$binary" --help >/dev/null
+
+  macos-android-tcp:
+    name: macOS to Android TCP
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: GlassDisplay
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36"
+
+      - name: Build Android app and sender
+        run: |
+          ./gradlew --no-daemon app:assembleDebug
+          GLASS_DISPLAY_SENDER_APP="$RUNNER_TEMP/GlassDisplaySender.app" host/sender/build.sh --force
+
+      - name: Run macOS to Android TCP test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-port: 5556
+          emulator-boot-timeout: 1200
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -wipe-data
+          disable-animations: true
+          pre-emulator-launch-script: |
+            adb kill-server || true
+            adb start-server
+          script: cd GlassDisplay && GLASS_DISPLAY_SENDER_APP="$RUNNER_TEMP/GlassDisplaySender.app" bash host/scripts/ci-macos-android-tcp-test.sh
+
+      - name: Upload communication logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: glassdisplay-macos-android-tcp-logs
+          path: |
+            ${{ runner.temp }}/glassdisplay-logcat.txt
+          if-no-files-found: ignore
