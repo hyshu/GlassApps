@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity(), FrameServerListener {
             onRestartBle = { ensureBlePermissionsAndStart() },
             onResolutionPending = { command -> statusPresenter.showResolutionPending(command) }
         )
+        streamCoordinator.queueHostCommand(HostCommand.TransportAuto)
         blePermissionController = BlePermissionController(
             activity = this,
             onGranted = { bleFrameServer.start() },
