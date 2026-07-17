@@ -81,9 +81,7 @@ Enter로 메뉴를 열고 Resolution에서 프리셋을 선택합니다.
 
 ## 통신 방식
 
-기본값은 `adb` 우선입니다.<br>
-USB 연결 중에는 `adb forward tcp:19400 tcp:19400`로 전송합니다.<br>
-USB가 분리되면 글래스의 Transport 메뉴 설정에 따라 Wi-Fi(동일 LAN) 또는 BLE로 전환합니다(기본값은 Wi-Fi이며, Wi-Fi를 사용할 수 없으면 BLE로 폴백합니다).
+Transport 기본 설정은 Auto입니다. USB/adb, Wi-Fi(동일 LAN), BLE 순서로 시도합니다. Wi-Fi 또는 BLE를 명시적으로 고정할 수도 있습니다.
 
 통신 방식을 고정하려면:
 
@@ -105,7 +103,7 @@ adb 설정 시 `glass-stream.sh`가 글래스의 현재 Wi-Fi LAN IP(`wlan0`)를
 USB를 분리하면 sender가 캐시된 IP의 `tcp:19400`으로 직접 연결합니다. 프레임은 네트워크에서도 AES-256-GCM으로 암호화된 상태를 유지합니다.<br>
 Wi-Fi로는 최대 2대의 Mac에서 동시에 전송할 수 있으며, Display mode의 Split으로 둘 다 표시할 수 있습니다.<br>
 글래스의 IP가 바뀐 경우(DHCP)에는 USB를 한 번 연결하면 캐시가 갱신됩니다. 그동안 BLE 폴백은 계속 사용할 수 있습니다.<br>
-Wi-Fi와 BLE 전환은 글래스 메뉴에서 합니다: Enter → Transport → Wi-Fi / BLE.
+Auto, Wi-Fi, BLE 전환은 글래스 메뉴에서 합니다: Enter → Transport.
 
 ## 암호화
 

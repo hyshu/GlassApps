@@ -81,9 +81,7 @@ Android 眼镜端的 Resolution 菜单用于切换 Mac 端 BetterDisplay 虚拟�
 
 ## 通信方式
 
-默认优先使用 `adb`。<br>
-USB 连接时使用 `adb forward tcp:19400 tcp:19400` 发送。<br>
-USB 断开后，根据眼镜端 Transport 菜单的设置切换到 Wi-Fi（同一局域网）或 BLE（默认是 Wi-Fi，Wi-Fi 不可用时回退到 BLE）。
+Transport 默认设置为 Auto，依次尝试 USB/adb、Wi-Fi（同一局域网）和 BLE。也可以明确固定为 Wi-Fi 或 BLE。
 
 固定通信方式：
 
@@ -105,7 +103,7 @@ Wi-Fi 模式使用与 adb 模式相同的 TCP 协议通过局域网发送，因�
 拔掉 USB 后，sender 会直接连接缓存 IP 的 `tcp:19400`。帧在网络上仍保持 AES-256-GCM 加密。<br>
 最多可有 2 台 Mac 通过 Wi-Fi 同时发送，使用 Display mode 的 Split 可同时显示两者。<br>
 如果眼镜的 IP 发生变化（DHCP），重新连接一次 USB 即可刷新缓存，期间 BLE 回退仍然可用。<br>
-在眼镜菜单中切换 Wi-Fi 和 BLE：Enter → Transport → Wi-Fi / BLE。
+在眼镜菜单中切换 Auto、Wi-Fi 和 BLE：Enter → Transport。
 
 ## 加密
 
