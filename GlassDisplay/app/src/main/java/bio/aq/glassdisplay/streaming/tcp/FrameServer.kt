@@ -7,6 +7,8 @@ import bio.aq.glassdisplay.protocol.WireProtocol
 import bio.aq.glassdisplay.streaming.FrameReceiveSession
 import bio.aq.glassdisplay.streaming.FrameServerListener
 import bio.aq.glassdisplay.streaming.StreamKeyStore
+import bio.aq.glassdisplay.streaming.StreamStatus
+import bio.aq.glassdisplay.streaming.StreamStatusKind
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataOutputStream
@@ -73,10 +75,11 @@ class FrameServer(
                 openServerSocket().use { server ->
                     serverSocket = server
                     Log.i(logTag, "Listening on tcp:$port")
-                    listener.onStatusChanged(
+                    listener.onStatusChanged(StreamStatus(
+                        kind = StreamStatusKind.Waiting,
                         title = "Waiting for host",
                         detail = "Keep host/scripts/glass-stream.sh running. It will forward tcp:$port and connect automatically."
-                    )
+                    ))
 
                     while (running.get()) {
                         val socket = server.accept()
@@ -111,10 +114,11 @@ class FrameServer(
                 }
 
                 Log.e(logTag, "Socket error", exception)
-                listener.onStatusChanged(
+                listener.onStatusChanged(StreamStatus(
+                    kind = StreamStatusKind.StreamError,
                     title = "Socket error",
                     detail = exception.message ?: "Unable to open stream socket."
-                )
+                ))
                 sleepQuietly(RETRY_DELAY_MS)
             } finally {
                 serverSocket = null
@@ -133,10 +137,11 @@ class FrameServer(
                 if (connectedClientCount.incrementAndGet() == 1) {
                     listener.onTransportConnected(Transport.Tcp)
                 }
-                listener.onStatusChanged(
+                listener.onStatusChanged(StreamStatus(
+                    kind = StreamStatusKind.Connected,
                     title = "Connected",
                     detail = "Streaming on tcp:$port."
-                )
+                ))
             }
         }
 
@@ -150,10 +155,11 @@ class FrameServer(
             if (running.get()) {
                 if (transportConnected.get()) {
                     Log.e(logTag, "Stream error", exception)
-                    listener.onStatusChanged(
+                    listener.onStatusChanged(StreamStatus(
+                        kind = StreamStatusKind.StreamError,
                         title = "Stream error",
                         detail = exception.message ?: "Unable to read stream."
-                    )
+                    ))
                 } else {
                     Log.w(logTag, "Unauthenticated Wi-Fi client disconnected: $sourceId")
                 }
@@ -167,10 +173,11 @@ class FrameServer(
                 listener.onTransportDisconnected(Transport.Tcp)
                 if (running.get()) {
                     Log.i(logTag, "Client disconnected, waiting again")
-                    listener.onStatusChanged(
+                    listener.onStatusChanged(StreamStatus(
+                        kind = StreamStatusKind.Disconnected,
                         title = "Client disconnected",
                         detail = "Waiting for host on tcp:$port."
-                    )
+                    ))
                 }
             } else if (transportConnected.get()) {
                 Log.i(logTag, "Client disconnected: $sourceId")

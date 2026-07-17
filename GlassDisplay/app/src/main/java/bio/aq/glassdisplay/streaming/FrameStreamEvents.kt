@@ -12,7 +12,23 @@ interface FrameServerListener :
     TransportObserver
 
 interface StreamStatusSink {
-    fun onStatusChanged(title: String, detail: String)
+    fun onStatusChanged(status: StreamStatus)
+}
+
+data class StreamStatus(
+    val kind: StreamStatusKind,
+    val title: String,
+    val detail: String
+)
+
+enum class StreamStatusKind {
+    Waiting,
+    Connected,
+    Disconnected,
+    StreamError,
+    BleStreamError,
+    Unavailable,
+    PermissionMissing
 }
 
 interface FrameStreamSink {

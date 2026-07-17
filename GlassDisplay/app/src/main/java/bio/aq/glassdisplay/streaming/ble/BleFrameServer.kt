@@ -24,6 +24,8 @@ import androidx.core.content.ContextCompat
 import bio.aq.glassdisplay.protocol.Transport
 import bio.aq.glassdisplay.streaming.FrameServerListener
 import bio.aq.glassdisplay.streaming.StreamKeyStore
+import bio.aq.glassdisplay.streaming.StreamStatus
+import bio.aq.glassdisplay.streaming.StreamStatusKind
 import java.io.IOException
 
 class BleFrameServer(
@@ -37,8 +39,6 @@ class BleFrameServer(
         context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val adapter: BluetoothAdapter? = bluetoothManager?.adapter
 
-    private var advertiser: BluetoothLeAdvertiser? = null
-    private var gattServer: BluetoothGattServer? = null
     private val sessionStore = BleFrameSessionStore(streamKeyStore, listener, listener)
     private val commandResponder = BleHostCommandResponder(
         commandSource = listener,
@@ -54,10 +54,7 @@ class BleFrameServer(
     )
 
     @Volatile
-    private var running = false
-
-    @Volatile
-    private var advertiseStarted = false
+    private var state: BleServerState = BleServerState.Stopped
 
     @Volatile
     private var receiverRegistered = false
@@ -67,13 +64,14 @@ class BleFrameServer(
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
             Log.i(logTag, "Advertising started: $settingsInEffect")
-            advertiseStarted = true
+            markAdvertisingStarted()
         }
 
         override fun onStartFailure(errorCode: Int) {
             Log.e(logTag, "Advertising failed: $errorCode")
-            advertiseStarted = false
+            markAdvertisingFailed(errorCode)
             showBleStatus(
+                kind = StreamStatusKind.Unavailable,
                 title = "BLE advertise failed",
                 detail = "code=$errorCode. Toggle Bluetooth or check permissions."
             )
@@ -94,12 +92,12 @@ class BleFrameServer(
 
     private val healthCheck = object : Runnable {
         override fun run() {
-            if (running) {
+            if (state.isActive) {
                 if (refreshDroppedCredentials()) {
                     Log.i(logTag, "health: stream credentials changed; restarting BLE advertising")
                     tearDown()
                     tryStart()
-                } else if (!advertiseStarted) {
+                } else if (state is BleServerState.Starting) {
                     Log.w(logTag, "health: advertise inactive; retrying")
                     tearDown()
                     tryStart()
@@ -118,6 +116,7 @@ class BleFrameServer(
                     listener.onTransportConnected(Transport.Ble)
                     sessionStore.connect(key)
                     showBleStatus(
+                        kind = StreamStatusKind.Connected,
                         title = "Connected",
                         detail = "Streaming over BLE."
                     )
@@ -131,8 +130,9 @@ class BleFrameServer(
                     if (sessionStore.isEmpty()) {
                         listener.onTransportDisconnected(Transport.Ble)
                     }
-                    if (sessionStore.isEmpty() && running) {
+                    if (sessionStore.isEmpty() && state.isActive) {
                         showBleStatus(
+                            kind = StreamStatusKind.Waiting,
                             title = "Waiting for host",
                             detail = "BLE advertising as $ADVERTISE_LOCAL_NAME."
                         )
@@ -217,10 +217,10 @@ class BleFrameServer(
 
     @Synchronized
     private fun tryStart() {
-        if (running && advertiseStarted) {
+        if (state is BleServerState.Advertising) {
             return
         }
-        if (running && !advertiseStarted) {
+        if (state is BleServerState.Starting) {
             tearDown()
         }
 
@@ -228,6 +228,7 @@ class BleFrameServer(
         if (adapter == null) {
             Log.w(logTag, "tryStart(): BluetoothAdapter is null")
             showBleStatus(
+                kind = StreamStatusKind.Unavailable,
                 title = "Bluetooth unavailable",
                 detail = "BluetoothAdapter not available on this device."
             )
@@ -236,6 +237,7 @@ class BleFrameServer(
         if (!adapter.isEnabled) {
             Log.w(logTag, "tryStart(): Bluetooth is disabled")
             showBleStatus(
+                kind = StreamStatusKind.Unavailable,
                 title = "Bluetooth disabled",
                 detail = "Enable Bluetooth to allow BLE streaming."
             )
@@ -245,6 +247,7 @@ class BleFrameServer(
         if (!hasRuntimePermissions()) {
             Log.w(logTag, "tryStart(): runtime BLE permissions missing")
             showBleStatus(
+                kind = StreamStatusKind.PermissionMissing,
                 title = "BLE permission missing",
                 detail = "Grant Nearby devices permission to enable BLE."
             )
@@ -260,22 +263,28 @@ class BleFrameServer(
         val advertiser = adapter.bluetoothLeAdvertiser
         if (advertiser == null) {
             showBleStatus(
+                kind = StreamStatusKind.Unavailable,
                 title = "BLE advertise unsupported",
                 detail = "This device cannot act as a BLE peripheral."
             )
             return
         }
 
-        running = true
-
         try {
-            openGattServerLocked(manager)
+            val server = openGattServerLocked(manager)
+            state = BleServerState.Starting(advertiser, server)
             startAdvertisingLocked(advertiser)
-            this.advertiser = advertiser
+            showBleStatus(
+                kind = StreamStatusKind.Waiting,
+                title = "Waiting for host",
+                detail = "BLE advertising as $ADVERTISE_LOCAL_NAME."
+            )
         } catch (exception: SecurityException) {
             Log.e(logTag, "BLE start denied", exception)
-            running = false
+            tearDown()
+            state = BleServerState.Failed
             showBleStatus(
+                kind = StreamStatusKind.PermissionMissing,
                 title = "BLE permission denied",
                 detail = exception.message ?: "Bluetooth permission missing."
             )
@@ -284,44 +293,50 @@ class BleFrameServer(
 
     @Synchronized
     private fun tearDown() {
-        running = false
-        advertiseStarted = false
+        val resources = state.resources
+        state = BleServerState.Stopped
 
         try {
-            advertiser?.stopAdvertising(advertiseCallback)
+            resources?.advertiser?.stopAdvertising(advertiseCallback)
         } catch (_: SecurityException) {
         } catch (_: IllegalStateException) {
         }
-        advertiser = null
-
         try {
-            gattServer?.close()
+            resources?.gattServer?.close()
         } catch (_: SecurityException) {
         }
-        gattServer = null
         sessionStore.clear()
         commandResponder.clear()
         requestHandler.clear()
     }
 
     @SuppressLint("MissingPermission")
-    private fun openGattServerLocked(manager: BluetoothManager) {
+    private fun openGattServerLocked(manager: BluetoothManager): BluetoothGattServer {
         val server = manager.openGattServer(context, gattCallback)
             ?: throw IllegalStateException("openGattServer returned null")
 
         server.addService(BleGattProfile.createService())
-        gattServer = server
-
-        showBleStatus(
-            title = "Waiting for host",
-            detail = "BLE advertising as $ADVERTISE_LOCAL_NAME."
-        )
+        return server
     }
 
-    private fun showBleStatus(title: String, detail: String) {
+    private fun showBleStatus(kind: StreamStatusKind, title: String, detail: String) {
         if (listener.shouldAcceptFrame(Transport.Ble)) {
-            listener.onStatusChanged(title = title, detail = detail)
+            listener.onStatusChanged(StreamStatus(kind, title, detail))
         }
+    }
+
+    @Synchronized
+    private fun markAdvertisingStarted() {
+        val starting = state as? BleServerState.Starting ?: return
+        state = BleServerState.Advertising(starting.advertiser, starting.gattServer)
+    }
+
+    @Synchronized
+    private fun markAdvertisingFailed(errorCode: Int) {
+        if (state !is BleServerState.Starting) return
+        tearDown()
+        state = BleServerState.Failed
+        Log.w(logTag, "BLE advertising entered failed state: $errorCode")
     }
 
     private fun refreshDroppedCredentials(): Boolean {
@@ -370,7 +385,7 @@ class BleFrameServer(
         value: ByteArray?
     ) {
         try {
-            gattServer?.sendResponse(device, requestId, status, offset, value)
+            state.resources?.gattServer?.sendResponse(device, requestId, status, offset, value)
         } catch (_: SecurityException) {
         }
     }
@@ -383,3 +398,29 @@ class BleFrameServer(
         private const val HEALTH_CHECK_INTERVAL_MS = 3_000L
     }
 }
+
+private sealed interface BleServerState {
+    data object Stopped : BleServerState
+    data object Failed : BleServerState
+
+    data class Starting(
+        override val advertiser: BluetoothLeAdvertiser,
+        override val gattServer: BluetoothGattServer
+    ) : BleServerState, Resources
+
+    data class Advertising(
+        override val advertiser: BluetoothLeAdvertiser,
+        override val gattServer: BluetoothGattServer
+    ) : BleServerState, Resources
+
+    interface Resources {
+        val advertiser: BluetoothLeAdvertiser
+        val gattServer: BluetoothGattServer
+    }
+}
+
+private val BleServerState.resources: BleServerState.Resources?
+    get() = this as? BleServerState.Resources
+
+private val BleServerState.isActive: Boolean
+    get() = this is BleServerState.Starting || this is BleServerState.Advertising

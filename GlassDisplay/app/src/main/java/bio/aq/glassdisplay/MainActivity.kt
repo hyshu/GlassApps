@@ -26,6 +26,8 @@ import bio.aq.glassdisplay.protocol.StreamStats
 import bio.aq.glassdisplay.protocol.Transport
 import bio.aq.glassdisplay.streaming.FrameServerListener
 import bio.aq.glassdisplay.streaming.StreamCoordinator
+import bio.aq.glassdisplay.streaming.StreamStatus
+import bio.aq.glassdisplay.streaming.StreamStatusKind
 import bio.aq.glassdisplay.streaming.ble.BleFrameServer
 import bio.aq.glassdisplay.streaming.ble.BlePermissionController
 import bio.aq.glassdisplay.streaming.tcp.FrameServer
@@ -171,12 +173,16 @@ class MainActivity : ComponentActivity(), FrameServerListener {
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
         handleCommandKey(event) || super.onKeyUp(keyCode, event)
 
-    override fun onStatusChanged(title: String, detail: String) {
+    override fun onStatusChanged(status: StreamStatus) {
         mainHandler.post {
-            if (title == "Connected") {
+            if (status.kind == StreamStatusKind.Connected) {
                 statusPresenter.hide()
             } else {
-                statusPresenter.show(title, detail, position = statusPositionFor(title))
+                statusPresenter.show(
+                    status.title,
+                    status.detail,
+                    position = statusPositionFor(status.kind)
+                )
             }
         }
     }
@@ -235,8 +241,8 @@ class MainActivity : ComponentActivity(), FrameServerListener {
         return shouldAcceptFrame(transport)
     }
 
-    private fun statusPositionFor(title: String): StatusPanelPosition {
-        if (title == "BLE stream error" &&
+    private fun statusPositionFor(kind: StreamStatusKind): StatusPanelPosition {
+        if (kind == StreamStatusKind.BleStreamError &&
             displayMode.value == FrameView.DisplayMode.Split &&
             frameView.hasFrames() &&
             frameView.visibleSplitFrameCount() < SPLIT_SOURCE_LIMIT

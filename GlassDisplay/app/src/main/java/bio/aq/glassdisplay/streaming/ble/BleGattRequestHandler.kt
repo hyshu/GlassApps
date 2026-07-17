@@ -6,6 +6,8 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.util.Log
 import bio.aq.glassdisplay.protocol.Transport
 import bio.aq.glassdisplay.streaming.FrameServerListener
+import bio.aq.glassdisplay.streaming.StreamStatus
+import bio.aq.glassdisplay.streaming.StreamStatusKind
 
 class BleGattRequestHandler(
     private val sessionStore: BleFrameSessionStore,
@@ -61,10 +63,11 @@ class BleGattRequestHandler(
             session.reset()
             sendFailureIfNeeded(device, requestId, responseNeeded, offset)
             if (listener.shouldShowStreamError(Transport.Ble)) {
-                listener.onStatusChanged(
+                listener.onStatusChanged(StreamStatus(
+                    kind = StreamStatusKind.BleStreamError,
                     title = "BLE stream error",
                     detail = exception.message ?: "Parser reset; continuing."
-                )
+                ))
             }
         }
     }
@@ -91,10 +94,11 @@ class BleGattRequestHandler(
             Log.e(LOG_TAG, "BLE host authentication failed for $address", exception)
             sendFailureIfNeeded(device, requestId, responseNeeded, offset)
             if (listener.shouldShowStreamError(Transport.Ble)) {
-                listener.onStatusChanged(
+                listener.onStatusChanged(StreamStatus(
+                    kind = StreamStatusKind.BleStreamError,
                     title = "BLE key unavailable",
                     detail = exception.message ?: "Connect over adb once for this Mac."
-                )
+                ))
             }
         }
     }
