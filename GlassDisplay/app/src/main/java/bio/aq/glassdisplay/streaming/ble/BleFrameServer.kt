@@ -154,6 +154,7 @@ class BleFrameServer(
                 device = device,
                 requestId = requestId,
                 characteristic = characteristic,
+                preparedWrite = preparedWrite,
                 responseNeeded = responseNeeded,
                 offset = offset,
                 value = value

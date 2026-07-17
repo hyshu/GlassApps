@@ -25,6 +25,7 @@ class BleGattRequestHandler(
         device: BluetoothDevice,
         requestId: Int,
         characteristic: BluetoothGattCharacteristic,
+        preparedWrite: Boolean,
         responseNeeded: Boolean,
         offset: Int,
         value: ByteArray
@@ -35,6 +36,11 @@ class BleGattRequestHandler(
         }
 
         if (characteristic.uuid != BleGattProfile.FRAME_CHARACTERISTIC_UUID) {
+            sendFailureIfNeeded(device, requestId, responseNeeded, offset)
+            return
+        }
+
+        if (!BleFrameWritePolicy.accepts(preparedWrite, offset)) {
             sendFailureIfNeeded(device, requestId, responseNeeded, offset)
             return
         }
@@ -156,4 +162,9 @@ class BleGattRequestHandler(
         private const val LOG_TAG = "GlassBleGattRequest"
         private const val HOST_ID_BYTES = 8
     }
+}
+
+object BleFrameWritePolicy {
+    fun accepts(preparedWrite: Boolean, offset: Int): Boolean =
+        !preparedWrite && offset == 0
 }
