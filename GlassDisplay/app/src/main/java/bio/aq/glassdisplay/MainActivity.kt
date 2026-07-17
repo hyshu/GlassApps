@@ -89,7 +89,11 @@ class MainActivity : ComponentActivity(), FrameServerListener {
             GlassDisplayTheme {
                 val menuState = commandMenuController.state
                 val fpsStateLabel = stringResource(
-                    if (fpsOverlayVisible.value) R.string.state_on else R.string.state_off
+                    if (fpsOverlayVisible.value) {
+                        R.string.overlay_state_on
+                    } else {
+                        R.string.overlay_state_off
+                    }
                 )
                 val displayModeLabel = stringResource(
                     when (displayMode.value) {
@@ -161,15 +165,11 @@ class MainActivity : ComponentActivity(), FrameServerListener {
         }
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (handleDirectionalKey(event)) {
-            return true
-        }
-        if (handleEnterKey(event)) {
-            return true
-        }
-        return super.dispatchKeyEvent(event)
-    }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
+        handleCommandKey(event) || super.onKeyDown(keyCode, event)
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
+        handleCommandKey(event) || super.onKeyUp(keyCode, event)
 
     override fun onStatusChanged(title: String, detail: String) {
         mainHandler.post {
@@ -265,6 +265,10 @@ class MainActivity : ComponentActivity(), FrameServerListener {
         return enterKeyController.handle(event) {
             handleMenuEnter()
         }
+    }
+
+    private fun handleCommandKey(event: KeyEvent): Boolean {
+        return handleDirectionalKey(event) || handleEnterKey(event)
     }
 
     private fun handleDirectionalKey(event: KeyEvent): Boolean {
