@@ -26,6 +26,39 @@ data class BleHostCommandResponse(
     }
 }
 
+class BleCommandReadResponder(
+    private val commandResponder: BleHostCommandResponder
+) {
+    private val responses = ConcurrentHashMap<String, BleHostCommandResponse>()
+
+    fun responseForRead(
+        address: String,
+        offset: Int,
+        connectedAddresses: Set<String>
+    ): BleHostCommandResponse? {
+        if (offset < 0) return null
+
+        val response = if (offset == 0) {
+            commandResponder.responseForDevice(address, connectedAddresses).also {
+                responses[address] = it
+            }
+        } else {
+            responses[address] ?: return null
+        }
+        if (offset > response.bytes.size) return null
+
+        return response.copy(bytes = response.bytes.copyOfRange(offset, response.bytes.size))
+    }
+
+    fun remove(address: String) {
+        responses.remove(address)
+    }
+
+    fun clear() {
+        responses.clear()
+    }
+}
+
 class BleHostCommandResponder(
     private val commandSource: HostCommandSource,
     private val streamKeyProvider: (address: String) -> ByteArray,

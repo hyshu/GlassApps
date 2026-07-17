@@ -60,6 +60,40 @@ class BleHostCommandResponderTest {
         )
     }
 
+    @Test
+    fun commandReadResponder_reusesEncryptedResponseForBlobReads() {
+        val commandSource = FakeCommandSource(HostCommand.Resolution480x320)
+        val responder = BleCommandReadResponder(
+            BleHostCommandResponder(
+                commandSource = commandSource,
+                streamKeyProvider = { ByteArray(32) { it.toByte() } },
+                secureRandom = FixedSecureRandom()
+            )
+        )
+
+        val first = responder.responseForRead("a", 0, setOf("a"))!!
+        val continuation = responder.responseForRead("a", 20, setOf("a"))!!
+
+        assertEquals(1, commandSource.consumeCount)
+        assertEquals(HostCommand.Resolution480x320, continuation.command)
+        assertArrayEquals(first.bytes.copyOfRange(20, first.bytes.size), continuation.bytes)
+    }
+
+    @Test
+    fun commandReadResponder_rejectsInvalidOrUnknownOffsets() {
+        val responder = BleCommandReadResponder(
+            BleHostCommandResponder(
+                commandSource = FakeCommandSource(),
+                streamKeyProvider = { error("No stream key expected.") },
+                secureRandom = FixedSecureRandom()
+            )
+        )
+
+        assertNull(responder.responseForRead("a", -1, setOf("a")))
+        assertNull(responder.responseForRead("a", 1, setOf("a")))
+        assertNull(responder.responseForRead("a", 5, setOf("a")))
+    }
+
     private class FakeCommandSource(
         private var nextCommand: HostCommand? = null
     ) : HostCommandSource {

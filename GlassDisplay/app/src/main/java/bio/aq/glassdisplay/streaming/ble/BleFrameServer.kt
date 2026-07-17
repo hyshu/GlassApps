@@ -126,6 +126,7 @@ class BleFrameServer(
                     Log.i(logTag, "BLE central disconnected: $key")
                     sessionStore.disconnect(key)
                     commandResponder.remove(key)
+                    requestHandler.onDeviceDisconnected(key)
                     listener.onFrameSourceDisconnected(sessionStore.sourceIdForAddress(key))
                     if (sessionStore.isEmpty()) {
                         listener.onTransportDisconnected(Transport.Ble)
@@ -299,6 +300,7 @@ class BleFrameServer(
         gattServer = null
         sessionStore.clear()
         commandResponder.clear()
+        requestHandler.clear()
     }
 
     @SuppressLint("MissingPermission")

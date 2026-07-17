@@ -19,6 +19,8 @@ class BleGattRequestHandler(
         value: ByteArray?
     ) -> Unit
 ) {
+    private val commandReadResponder = BleCommandReadResponder(commandResponder)
+
     fun onCharacteristicWriteRequest(
         device: BluetoothDevice,
         requestId: Int,
@@ -109,8 +111,9 @@ class BleGattRequestHandler(
         }
 
         val commandResponse = try {
-            commandResponder.responseForDevice(
+            commandReadResponder.responseForRead(
                 address = address,
+                offset = offset,
                 connectedAddresses = sessionStore.connectedAddresses()
             )
         } catch (exception: Exception) {
@@ -119,16 +122,23 @@ class BleGattRequestHandler(
             return
         }
 
-        if (commandResponse.command != null) {
-            Log.i(LOG_TAG, "Sending BLE host command to $address: ${commandResponse.command}")
+        if (commandResponse == null) {
+            sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+            return
         }
 
-        val sliced = if (offset >= commandResponse.bytes.size) {
-            ByteArray(0)
-        } else {
-            commandResponse.bytes.copyOfRange(offset, commandResponse.bytes.size)
+        if (commandResponse.command != null && offset == 0) {
+            Log.i(LOG_TAG, "Sending BLE host command to $address: ${commandResponse.command}")
         }
-        sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, sliced)
+        sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, commandResponse.bytes)
+    }
+
+    fun onDeviceDisconnected(address: String) {
+        commandReadResponder.remove(address)
+    }
+
+    fun clear() {
+        commandReadResponder.clear()
     }
 
     private fun sendFailureIfNeeded(
