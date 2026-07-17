@@ -12,6 +12,7 @@ import java.io.BufferedOutputStream
 import java.io.DataOutputStream
 import java.io.IOException
 import java.net.InetSocketAddress
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
@@ -30,6 +31,7 @@ class FrameServer(
     private val running = AtomicBoolean(false)
     private val connectedClientCount = AtomicInteger(0)
     private val clientSockets = ConcurrentHashMap.newKeySet<Socket>()
+    private val wifiClientSockets = ConcurrentHashMap.newKeySet<Socket>()
 
     @Volatile
     private var workerThread: Thread? = null
@@ -58,6 +60,7 @@ class FrameServer(
 
         clientSockets.forEach { closeQuietly(it) }
         clientSockets.clear()
+        wifiClientSockets.clear()
         closeQuietly(serverSocket)
         workerThread?.interrupt()
         workerThread = null
@@ -77,16 +80,22 @@ class FrameServer(
 
                     while (running.get()) {
                         val socket = server.accept()
-                        if (clientSockets.size >= MAX_CLIENTS) {
+                        val requiresWifiAuthentication =
+                            TcpClientPolicy.requiresAuthenticationTimeout(socket.inetAddress)
+                        if (requiresWifiAuthentication && wifiClientSockets.size >= MAX_WIFI_CLIENTS) {
                             Log.w(
                                 logTag,
-                                "Rejecting client ${socket.inetAddress?.hostAddress}: already $MAX_CLIENTS connected"
+                                "Rejecting Wi-Fi client ${socket.inetAddress?.hostAddress}: " +
+                                    "already $MAX_WIFI_CLIENTS connected"
                             )
                             closeQuietly(socket)
                             continue
                         }
 
                         clientSockets.add(socket)
+                        if (requiresWifiAuthentication) {
+                            wifiClientSockets.add(socket)
+                        }
                         thread(
                             start = true,
                             isDaemon = true,
@@ -115,30 +124,46 @@ class FrameServer(
 
     private fun serveClient(socket: Socket) {
         val sourceId = "tcp:${socket.inetAddress?.hostAddress}:${socket.port}"
+        val requiresWifiAuthentication =
+            TcpClientPolicy.requiresAuthenticationTimeout(socket.inetAddress)
+        val transportConnected = AtomicBoolean(false)
         Log.i(logTag, "Client connected from $sourceId")
-        if (connectedClientCount.incrementAndGet() == 1) {
-            listener.onTransportConnected(Transport.Tcp)
+        val announceConnected = {
+            if (transportConnected.compareAndSet(false, true)) {
+                if (connectedClientCount.incrementAndGet() == 1) {
+                    listener.onTransportConnected(Transport.Tcp)
+                }
+                listener.onStatusChanged(
+                    title = "Connected",
+                    detail = "Streaming on tcp:$port."
+                )
+            }
         }
-        listener.onStatusChanged(
-            title = "Connected",
-            detail = "Streaming on tcp:$port."
-        )
+
+        if (!requiresWifiAuthentication) {
+            announceConnected()
+        }
 
         try {
-            handleClient(socket, sourceId)
+            handleClient(socket, sourceId, requiresWifiAuthentication, announceConnected)
         } catch (exception: IOException) {
             if (running.get()) {
-                Log.e(logTag, "Stream error", exception)
-                listener.onStatusChanged(
-                    title = "Stream error",
-                    detail = exception.message ?: "Unable to read stream."
-                )
+                if (transportConnected.get()) {
+                    Log.e(logTag, "Stream error", exception)
+                    listener.onStatusChanged(
+                        title = "Stream error",
+                        detail = exception.message ?: "Unable to read stream."
+                    )
+                } else {
+                    Log.w(logTag, "Unauthenticated Wi-Fi client disconnected: $sourceId")
+                }
             }
         } finally {
             closeQuietly(socket)
             clientSockets.remove(socket)
+            wifiClientSockets.remove(socket)
             listener.onFrameSourceDisconnected(sourceId)
-            if (connectedClientCount.decrementAndGet() == 0) {
+            if (transportConnected.get() && connectedClientCount.decrementAndGet() == 0) {
                 listener.onTransportDisconnected(Transport.Tcp)
                 if (running.get()) {
                     Log.i(logTag, "Client disconnected, waiting again")
@@ -147,15 +172,23 @@ class FrameServer(
                         detail = "Waiting for host on tcp:$port."
                     )
                 }
-            } else {
+            } else if (transportConnected.get()) {
                 Log.i(logTag, "Client disconnected: $sourceId")
             }
         }
     }
 
     @Throws(IOException::class)
-    private fun handleClient(socket: Socket, sourceId: String) {
+    private fun handleClient(
+        socket: Socket,
+        sourceId: String,
+        requiresWifiAuthentication: Boolean,
+        onAuthenticated: () -> Unit
+    ) {
         socket.tcpNoDelay = true
+        if (requiresWifiAuthentication) {
+            socket.soTimeout = WIFI_AUTH_TIMEOUT_MS
+        }
         BufferedInputStream(socket.getInputStream()).use { input ->
             DataOutputStream(BufferedOutputStream(socket.getOutputStream())).use { output ->
                 val session = FrameReceiveSession(
@@ -165,6 +198,10 @@ class FrameServer(
                     frameSink = listener,
                     hostStatusSink = listener
                 ) { frameId, acceptsFrames ->
+                    if (requiresWifiAuthentication && socket.soTimeout != 0) {
+                        socket.soTimeout = 0
+                        onAuthenticated()
+                    }
                     val hostCommand = if (acceptsFrames) {
                         listener.consumeHostCommand(Transport.Tcp)
                     } else {
@@ -214,8 +251,14 @@ class FrameServer(
 
     companion object {
         const val DEFAULT_PORT = 19400
-        const val MAX_CLIENTS = 2
+        const val MAX_WIFI_CLIENTS = 2
 
+        private const val WIFI_AUTH_TIMEOUT_MS = 5_000
         private const val RETRY_DELAY_MS = 750L
     }
+}
+
+object TcpClientPolicy {
+    fun requiresAuthenticationTimeout(address: InetAddress?): Boolean =
+        address?.isLoopbackAddress != true
 }
