@@ -11,6 +11,8 @@ import javax.crypto.spec.SecretKeySpec
 class FramePayloadDecoder(
     private val streamKeyProvider: () -> ByteArray
 ) {
+    constructor(streamKeyStore: StreamKeyStore) : this(streamKeyStore::requireStreamKey)
+
     private val inflater = Inflater(true)
     private val deltaDecoder = DeltaFrameDecoder()
     private var secretKey: SecretKeySpec? = null

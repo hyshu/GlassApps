@@ -2,7 +2,9 @@ package bio.aq.glassdisplay.streaming
 
 import android.os.SystemClock
 
-class FpsEstimator {
+class FpsEstimator(
+    private val nowNs: () -> Long = SystemClock::elapsedRealtimeNanos
+) {
     private var lastFrameTimestampNs = 0L
     private var smoothedFps = 0.0
 
@@ -12,7 +14,7 @@ class FpsEstimator {
     }
 
     fun update(): Double {
-        val now = SystemClock.elapsedRealtimeNanos()
+        val now = nowNs()
         val previous = lastFrameTimestampNs
         lastFrameTimestampNs = now
 

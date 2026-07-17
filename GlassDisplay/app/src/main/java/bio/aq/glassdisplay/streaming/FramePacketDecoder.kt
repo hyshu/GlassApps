@@ -50,10 +50,11 @@ data class HostStatusMessage(
 )
 
 class FramePacketDecoder(
-    streamKeyProvider: () -> ByteArray
+    streamKeyProvider: () -> ByteArray,
+    nowNs: () -> Long = android.os.SystemClock::elapsedRealtimeNanos
 ) {
     private val payloadDecoder = FramePayloadDecoder(streamKeyProvider)
-    private val fpsEstimator = FpsEstimator()
+    private val fpsEstimator = FpsEstimator(nowNs)
 
     fun reset() {
         payloadDecoder.reset()

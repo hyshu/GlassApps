@@ -9,7 +9,8 @@ import java.nio.ByteOrder
 
 class FrameStreamParser(
     streamKeyProvider: () -> ByteArray,
-    private val sink: Sink
+    private val sink: Sink,
+    nowNs: () -> Long = android.os.SystemClock::elapsedRealtimeNanos
 ) {
     interface Sink {
         fun onFrame(
@@ -26,7 +27,7 @@ class FrameStreamParser(
 
     private val buffer = ByteBuffer.allocate(WireProtocol.Frame.MAX_BUFFER_BYTES)
         .order(ByteOrder.BIG_ENDIAN)
-    private val packetDecoder = FramePacketDecoder(streamKeyProvider)
+    private val packetDecoder = FramePacketDecoder(streamKeyProvider, nowNs)
 
     fun reset() {
         buffer.clear()
