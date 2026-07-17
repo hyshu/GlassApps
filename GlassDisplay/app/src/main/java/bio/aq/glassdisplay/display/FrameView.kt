@@ -8,6 +8,7 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import bio.aq.glassdisplay.protocol.Transport
+import bio.aq.glassdisplay.protocol.StreamStats
 
 class FrameView @JvmOverloads constructor(
     context: Context,
@@ -26,7 +27,7 @@ class FrameView @JvmOverloads constructor(
 
     private var displayMode = DisplayMode.Full
     private var fpsOverlayVisible = false
-    private var fpsText = "0.0 FPS"
+    private var overlayText = "Wi-Fi\nFast\n0ms"
 
     fun submitPackedFrame(width: Int, height: Int, packedFrame: ByteArray) {
         submitPackedFrame(DEFAULT_SOURCE_ID, Transport.Tcp, width, height, packedFrame)
@@ -96,9 +97,13 @@ class FrameView @JvmOverloads constructor(
         return fpsOverlayVisible
     }
 
-    fun submitFps(framesPerSecond: Double) {
+    fun submitOverlayStats(sourceId: String, transport: Transport, stats: StreamStats) {
         synchronized(frameLock) {
-            fpsText = String.format("%.1f FPS", framesPerSecond)
+            overlayText = listOf(
+                transportName(sourceId, transport),
+                latencyClass(stats.roundTripMs),
+                "${stats.roundTripMs}ms"
+            ).joinToString("\n")
         }
         if (fpsOverlayVisible) {
             postInvalidateOnAnimation()
@@ -129,7 +134,7 @@ class FrameView @JvmOverloads constructor(
             }
 
             if (fpsOverlayVisible) {
-                fpsOverlayRenderer.draw(canvas, width, fpsText)
+                fpsOverlayRenderer.draw(canvas, width, overlayText)
             }
         }
     }
@@ -143,6 +148,24 @@ class FrameView @JvmOverloads constructor(
             splitIndex = splitIndex
         )
         sourceFrameRenderer.draw(canvas, sourceFrame, viewportRect)
+    }
+
+    private fun transportName(sourceId: String, transport: Transport): String {
+        if (transport == Transport.Ble) return "BLE"
+        return if (sourceId.startsWith("tcp:127.") || sourceId.contains("0:0:0:0:0:0:0:1")) {
+            "USB"
+        } else {
+            "Wi-Fi"
+        }
+    }
+
+    private fun latencyClass(roundTripMs: Long): String {
+        return when {
+            roundTripMs < 50L -> "Fast"
+            roundTripMs < 100L -> "Middle"
+            roundTripMs < 200L -> "Slow"
+            else -> "Lag"
+        }
     }
 
     enum class DisplayMode {

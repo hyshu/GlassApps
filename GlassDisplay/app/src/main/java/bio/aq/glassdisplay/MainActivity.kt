@@ -190,7 +190,7 @@ class MainActivity : ComponentActivity(), FrameServerListener {
         stats: StreamStats
     ) {
         frameView.submitPackedFrame(sourceId, transport, width, height, packedFrame)
-        frameView.submitFps(stats.framesPerSecond)
+        frameView.submitOverlayStats(sourceId, transport, stats)
 
         val shouldHideStatus = shouldHideStatusAfterFrame(width, height)
         mainHandler.post {
