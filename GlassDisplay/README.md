@@ -1,7 +1,7 @@
 # Glass Display
 
 Glass Display streams your Mac screen to Android glasses.<br>
-It uses `adb` while USB is connected, then falls back to BLE when a synced stream key is available.
+It uses `adb` while USB is connected, then falls back to Wi-Fi (same LAN) or BLE when a synced stream key is available.
 
 English | [日本語](README.ja.md) | [简体中文](README.zh-Hans.md) | [繁體中文](README.zh-Hant.md) | [한국어](README.ko.md)
 
@@ -81,18 +81,29 @@ Press Enter to open the menu, then choose a preset from Resolution.
 
 ## Transport
 
-By default, `adb` is preferred.<br>
-While USB is connected, the app uses `adb forward tcp:19400 tcp:19400`.<br>
-When USB disconnects, it switches to BLE if a stream key has already been synced.
+The default Transport setting is Auto, which tries USB/adb, Wi-Fi (same LAN), then BLE in that order. Wi-Fi and BLE can also be selected explicitly.
 
 To force a transport:
 
 ```bash
+./host/scripts/glass-stream.sh --transport auto
 ./host/scripts/glass-stream.sh --transport tcp
+./host/scripts/glass-stream.sh --transport wifi
 ./host/scripts/glass-stream.sh --transport ble
 ```
 
-BLE requires one USB connection first so the encryption key can be synced to the Android glasses.
+Wi-Fi and BLE require one USB connection first so the encryption key can be synced to the Android glasses.
+
+## Wi-Fi Mode
+
+Wi-Fi mode streams over the LAN with the same TCP protocol as the adb mode, so it is much faster than BLE.<br>
+Connect the glasses to the same Wi-Fi network as the Mac from the Android Wi-Fi settings first.<br>
+During adb setup, `glass-stream.sh` reads the glasses' current Wi-Fi LAN IP (`wlan0`) and caches it next to the stream key (`keys/<serial>.ip`, refreshed on every USB connection).
+
+After USB is unplugged, the sender connects directly to the cached IP on `tcp:19400`. Frames stay AES-256-GCM encrypted on the network.<br>
+Up to 2 Macs can stream simultaneously over Wi-Fi; use Display mode Split to show both.<br>
+If the glasses' IP changes (DHCP), reconnect USB once to refresh the cache — BLE keeps working as a fallback in the meantime.<br>
+Choose Auto, Wi-Fi, or BLE from the glasses menu: Enter → Transport.
 
 ## Encryption
 
@@ -119,8 +130,9 @@ If BLE authentication fails, connect the Android glasses over USB and restart th
 - Left + Up: previous item
 - Resolution: BetterDisplay presets `480x640`, `480x320`, `off`
 - Display mode: Full / Split
+- Transport: Auto / Wi-Fi / BLE (Auto tries USB → Wi-Fi → BLE)
 
-Split mode shows multiple BLE sources in a vertical split view when more than one source is connected.
+Split mode shows multiple sources (Wi-Fi or BLE, up to 2) in a vertical split view when more than one source is connected.
 
 ## Uninstall
 

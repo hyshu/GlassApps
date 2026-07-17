@@ -24,7 +24,7 @@ class CommandMenuControllerTest {
         controller.show()
         controller.selectOffset(-1)
 
-        assertEquals(MenuAction.Close, controller.state.selectedAction)
+        assertEquals(MenuAction.FpsOverlay, controller.state.selectedAction)
     }
 
     @Test
@@ -44,7 +44,40 @@ class CommandMenuControllerTest {
     }
 
     @Test
-    fun handleEnter_closesAndEmitsLeafAction() {
+    fun handleEnter_opensTransportSubmenuAndBackRestoresMainSelection() {
+        val controller = CommandMenuController()
+
+        controller.show()
+        controller.selectOffset(3)
+        controller.handleEnter { error("No action expected.") }
+        assertEquals(CommandMenuPage.Transport, controller.state.page)
+        assertEquals(
+            listOf(MenuAction.TransportAuto, MenuAction.TransportWifi, MenuAction.TransportBle, MenuAction.Back),
+            controller.state.actions
+        )
+
+        controller.selectOffset(-1)
+        controller.handleEnter { error("No action expected.") }
+        assertEquals(CommandMenuPage.Main, controller.state.page)
+        assertEquals(MenuAction.OpenTransport, controller.state.selectedAction)
+    }
+
+    @Test
+    fun handleEnter_emitsTransportLeafAction() {
+        val emitted = mutableListOf<MenuAction>()
+        val controller = CommandMenuController()
+
+        controller.show()
+        controller.selectOffset(3)
+        controller.handleEnter { error("No action expected.") }
+        controller.handleEnter { emitted += it }
+
+        assertFalse(controller.state.visible)
+        assertEquals(listOf(MenuAction.TransportAuto), emitted)
+    }
+
+    @Test
+    fun handleEnter_closesWithoutEmittingAction() {
         val emitted = mutableListOf<MenuAction>()
         val controller = CommandMenuController()
 
@@ -52,6 +85,20 @@ class CommandMenuControllerTest {
         controller.handleEnter { emitted += it }
 
         assertFalse(controller.state.visible)
-        assertEquals(listOf(MenuAction.FpsOverlay), emitted)
+        assertTrue(emitted.isEmpty())
+    }
+
+    @Test
+    fun mainMenu_placesCloseFirstAndOverlayLast() {
+        assertEquals(
+            listOf(
+                MenuAction.Close,
+                MenuAction.OpenResolution,
+                MenuAction.OpenDisplayMode,
+                MenuAction.OpenTransport,
+                MenuAction.FpsOverlay
+            ),
+            menuActionsFor(CommandMenuPage.Main)
+        )
     }
 }

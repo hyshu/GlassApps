@@ -1,7 +1,7 @@
 # Glass Display
 
 Macの画面をAndroidグラスへ送って表示するためのアプリです。<br>
-USB接続中は`adb`経由、USBがない場合はキー同期済みのBLE経由で通信します。
+USB接続中は`adb`経由、USBがない場合はキー同期済みのWi-Fi(同一LAN)またはBLE経由で通信します。
 
 [English](README.md) | 日本語 | [简体中文](README.zh-Hans.md) | [繁體中文](README.zh-Hant.md) | [한국어](README.ko.md)
 
@@ -82,17 +82,29 @@ Enterでメニューを開き、Resolutionからプリセットを選びます�
 
 ## 通信方式
 
-標準では`adb`を優先します。<br>
-USB接続中は`adb forward tcp:19400 tcp:19400`で送信し、USBが外れるとキー同期済みのBLEへ切り替えます。
+Transportの標準設定はAutoです。USB/adb、Wi-Fi(同一LAN)、BLEの順に試します。Wi-FiまたはBLEを明示的に固定することもできます。
 
 通信方式を固定したい場合:
 
 ```bash
+./host/scripts/glass-stream.sh --transport auto
 ./host/scripts/glass-stream.sh --transport tcp
+./host/scripts/glass-stream.sh --transport wifi
 ./host/scripts/glass-stream.sh --transport ble
 ```
 
-BLEを使うには、一度USB接続して暗号化キーをAndroidグラスへ同期しておく必要があります。
+Wi-FiとBLEを使うには、一度USB接続して暗号化キーをAndroidグラスへ同期しておく必要があります。
+
+## Wi-Fiモード
+
+Wi-FiモードはadbモードとおなじTCPプロトコルでLAN経由送信するため、BLEより大幅に高速です。<br>
+先にAndroidのWi-Fi設定から、グラスをMacと同じWi-Fiネットワークへ接続しておきます。<br>
+adbセットアップ時に`glass-stream.sh`がグラスの現在のWi-Fi LAN IP(`wlan0`)を読み取り、ストリームキーの隣にキャッシュします(`keys/<serial>.ip`。USB接続の度に更新)。
+
+USBを外すと、senderはキャッシュ済みIPの`tcp:19400`へ直接接続します。フレームはネットワーク上でもAES-256-GCMで暗号化されたままです。<br>
+Wi-Fi経由では最大2台のMacから同時送信でき、Display modeのSplitで両方を表示できます。<br>
+グラスのIPが変わった場合(DHCP)は、一度USBを接続するとキャッシュが更新されます。その間もBLEフォールバックは利用できます。<br>
+Auto、Wi-Fi、BLEの切り替えはグラスのメニューから行います: Enter → Transport。
 
 ## 暗号化
 
@@ -119,8 +131,9 @@ BLEで認証エラーが出る場合は、AndroidグラスをUSB接続してか�
 - Left + Up: 前の項目
 - Resolution: BetterDisplayプリセット `480x640`、`480x320`、`off`
 - Display mode: Full / Split
+- Transport: Auto / Wi-Fi / BLE(AutoはUSB → Wi-Fi → BLEの順に試行)
 
-Splitモードでは、複数のBLE送信元がある場合に上下分割で表示します。
+Splitモードでは、複数の送信元(Wi-FiまたはBLE、最大2つ)がある場合に上下分割で表示します。
 
 ## アンインストール
 

@@ -1,7 +1,7 @@
 # Glass Display
 
 Glass Display는 Mac 화면을 Android 글래스로 스트리밍해서 표시하는 앱입니다.<br>
-USB 연결 중에는 `adb`를 사용하고, USB가 없을 때는 동기화된 스트림 키가 있으면 BLE로 통신합니다.
+USB 연결 중에는 `adb`를 사용하고, USB가 없을 때는 동기화된 스트림 키가 있으면 Wi-Fi(동일 LAN) 또는 BLE로 통신합니다.
 
 [English](README.md) | [日本語](README.ja.md) | [简体中文](README.zh-Hans.md) | [繁體中文](README.zh-Hant.md) | 한국어
 
@@ -83,16 +83,29 @@ Enter로 메뉴를 열고 Resolution에서 프리셋을 선택합니다.
 
 기본값은 `adb` 우선입니다.<br>
 USB 연결 중에는 `adb forward tcp:19400 tcp:19400`로 전송합니다.<br>
-USB가 분리되면 동기화된 키가 있는 경우 BLE로 전환합니다.
+USB가 분리되면 글래스의 Transport 메뉴 설정에 따라 Wi-Fi(동일 LAN) 또는 BLE로 전환합니다(기본값은 Wi-Fi이며, Wi-Fi를 사용할 수 없으면 BLE로 폴백합니다).
 
 통신 방식을 고정하려면:
 
 ```bash
+./host/scripts/glass-stream.sh --transport auto
 ./host/scripts/glass-stream.sh --transport tcp
+./host/scripts/glass-stream.sh --transport wifi
 ./host/scripts/glass-stream.sh --transport ble
 ```
 
-BLE를 사용하려면 먼저 한 번 USB로 연결해서 암호화 키를 Android 글래스에 동기화해야 합니다.
+Wi-Fi와 BLE를 사용하려면 먼저 한 번 USB로 연결해서 암호화 키를 Android 글래스에 동기화해야 합니다.
+
+## Wi-Fi 모드
+
+Wi-Fi 모드는 adb 모드와 같은 TCP 프로토콜로 LAN을 통해 전송하므로 BLE보다 훨씬 빠릅니다.<br>
+먼저 Android Wi-Fi 설정에서 글래스를 Mac과 같은 Wi-Fi 네트워크에 연결해 둡니다.<br>
+adb 설정 시 `glass-stream.sh`가 글래스의 현재 Wi-Fi LAN IP(`wlan0`)를 읽어 스트림 키 옆에 캐시합니다(`keys/<serial>.ip`, USB 연결 시마다 갱신).
+
+USB를 분리하면 sender가 캐시된 IP의 `tcp:19400`으로 직접 연결합니다. 프레임은 네트워크에서도 AES-256-GCM으로 암호화된 상태를 유지합니다.<br>
+Wi-Fi로는 최대 2대의 Mac에서 동시에 전송할 수 있으며, Display mode의 Split으로 둘 다 표시할 수 있습니다.<br>
+글래스의 IP가 바뀐 경우(DHCP)에는 USB를 한 번 연결하면 캐시가 갱신됩니다. 그동안 BLE 폴백은 계속 사용할 수 있습니다.<br>
+Wi-Fi와 BLE 전환은 글래스 메뉴에서 합니다: Enter → Transport → Wi-Fi / BLE.
 
 ## 암호화
 
@@ -119,8 +132,9 @@ BLE 인증 오류가 발생하면 Android 글래스를 USB로 연결한 뒤 서�
 - Left + Up: 이전 항목
 - Resolution: BetterDisplay 프리셋 `480x640`, `480x320`, `off`
 - Display mode: Full / Split
+- Transport: Auto / Wi-Fi / BLE(Auto는 USB → Wi-Fi → BLE 순서로 시도)
 
-Split 모드에서는 BLE 송신원이 여러 개 있을 때 위아래 분할로 표시합니다.
+Split 모드에서는 송신원(Wi-Fi 또는 BLE, 최대 2개)이 여러 개 있을 때 위아래 분할로 표시합니다.
 
 ## 제거
 

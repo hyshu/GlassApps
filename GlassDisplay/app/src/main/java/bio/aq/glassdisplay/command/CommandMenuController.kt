@@ -64,6 +64,7 @@ class CommandMenuController(
         when (action) {
             MenuAction.OpenResolution -> showSubmenu(CommandMenuPage.Resolution)
             MenuAction.OpenDisplayMode -> showSubmenu(CommandMenuPage.DisplayMode)
+            MenuAction.OpenTransport -> showSubmenu(CommandMenuPage.Transport)
             MenuAction.Back -> showMainMenuFromSubmenu(current.page)
             MenuAction.Close -> close()
             else -> {
@@ -84,6 +85,7 @@ class CommandMenuController(
             selectedIndex = when (previousPage) {
                 CommandMenuPage.Resolution -> MAIN_RESOLUTION_INDEX
                 CommandMenuPage.DisplayMode -> MAIN_DISPLAY_MODE_INDEX
+                CommandMenuPage.Transport -> MAIN_TRANSPORT_INDEX
                 CommandMenuPage.Main -> 0
             }
         )
@@ -93,5 +95,6 @@ class CommandMenuController(
     companion object {
         private const val MAIN_RESOLUTION_INDEX = 1
         private const val MAIN_DISPLAY_MODE_INDEX = 2
+        private const val MAIN_TRANSPORT_INDEX = 3
     }
 }

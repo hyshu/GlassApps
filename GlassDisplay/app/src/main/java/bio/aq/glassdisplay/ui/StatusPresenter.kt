@@ -44,6 +44,22 @@ class StatusPresenter(
         )
     }
 
+    fun showTransportSwitching(command: HostCommand) {
+        val transportLabel = context.getString(
+            when (command) {
+                HostCommand.TransportAuto -> R.string.transport_auto
+                HostCommand.TransportWifi -> R.string.transport_wifi
+                HostCommand.TransportBle -> R.string.transport_ble
+                else -> error("Not a transport command: $command")
+            }
+        )
+        show(
+            title = context.getString(R.string.status_transport_switching_title),
+            detail = context.getString(R.string.status_transport_switching_detail, transportLabel),
+            loading = true
+        )
+    }
+
     fun showResolutionSwitching(command: HostCommand) {
         show(
             title = context.getString(R.string.status_resolution_switching_title),

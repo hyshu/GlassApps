@@ -26,6 +26,17 @@
     <string name="display_mode_split">Split</string>
     <string name="menu_item_display_full">Display full</string>
     <string name="menu_item_display_split">Display split</string>
+    <string name="menu_title_transport">Transport</string>
+    <string name="menu_item_transport">Transport</string>
+    <string name="menu_item_transport_state">Transport: %1$s</string>
+    <string name="transport_auto">Auto</string>
+    <string name="transport_wifi">Wi-Fi</string>
+    <string name="transport_ble">BLE</string>
+    <string name="menu_item_transport_auto">Auto</string>
+    <string name="menu_item_transport_wifi">Wi-Fi</string>
+    <string name="menu_item_transport_ble">BLE</string>
+    <string name="status_transport_switching_title">Switching transport</string>
+    <string name="status_transport_switching_detail">Asking the host to reconnect via %1$s.</string>
     <string name="menu_item_back">Back</string>
     <string name="menu_item_close">Close menu</string>
 </resources>

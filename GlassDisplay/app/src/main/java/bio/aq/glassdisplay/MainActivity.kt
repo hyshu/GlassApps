@@ -19,6 +19,7 @@ import bio.aq.glassdisplay.command.DirectionCombo
 import bio.aq.glassdisplay.command.DirectionKeyController
 import bio.aq.glassdisplay.command.EnterKeyController
 import bio.aq.glassdisplay.command.MenuAction
+import bio.aq.glassdisplay.command.TransportPreference
 import bio.aq.glassdisplay.display.FrameView
 import bio.aq.glassdisplay.protocol.HostCommand
 import bio.aq.glassdisplay.protocol.StreamStats
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity(), FrameServerListener {
     private val statusUiState = mutableStateOf<StatusUiState?>(null)
     private val fpsOverlayVisible = mutableStateOf(false)
     private val displayMode = mutableStateOf(FrameView.DisplayMode.Full)
+    private val transportPreference = mutableStateOf(TransportPreference.Auto)
     private val commandMenuController = CommandMenuController { message -> Log.i(logTag, message) }
     private val enterKeyController = EnterKeyController()
     private val directionKeyController = DirectionKeyController(DIRECTION_COMBO_WINDOW_MS)
@@ -78,6 +80,7 @@ class MainActivity : ComponentActivity(), FrameServerListener {
             statusPresenter = statusPresenter,
             fpsOverlayVisible = fpsOverlayVisible,
             displayMode = displayMode,
+            transportPreference = transportPreference,
             hideSystemBars = { hideSystemBars() },
             log = { message -> Log.i(logTag, message) }
         )
@@ -94,6 +97,13 @@ class MainActivity : ComponentActivity(), FrameServerListener {
                         FrameView.DisplayMode.Split -> R.string.display_mode_split
                     }
                 )
+                val transportLabel = stringResource(
+                    when (transportPreference.value) {
+                        TransportPreference.Auto -> R.string.transport_auto
+                        TransportPreference.Wifi -> R.string.transport_wifi
+                        TransportPreference.Ble -> R.string.transport_ble
+                    }
+                )
                 GlassDisplayScreen(
                     frameView = frameView,
                     status = statusUiState.value,
@@ -105,6 +115,8 @@ class MainActivity : ComponentActivity(), FrameServerListener {
                             stringResource(R.string.menu_item_fps_state, fpsStateLabel)
                         } else if (action == MenuAction.OpenDisplayMode) {
                             stringResource(R.string.menu_item_display_mode_state, displayModeLabel)
+                        } else if (action == MenuAction.OpenTransport) {
+                            stringResource(R.string.menu_item_transport_state, transportLabel)
                         } else {
                             stringResource(action.labelResId)
                         }

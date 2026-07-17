@@ -1,7 +1,7 @@
 # Glass Display
 
 Glass Display 是一個將 Mac 畫面串流到 Android 眼鏡並顯示的應用程式。<br>
-USB 連線時透過 `adb` 通訊；沒有 USB 時，如果已同步金鑰，則透過 BLE 通訊。
+USB 連線時透過 `adb` 通訊；沒有 USB 時，如果已同步金鑰，則透過 Wi-Fi（同一區域網路）或 BLE 通訊。
 
 [English](README.md) | [日本語](README.ja.md) | [简体中文](README.zh-Hans.md) | 繁體中文 | [한국어](README.ko.md)
 
@@ -83,16 +83,29 @@ Android 眼鏡端的 Resolution 選單用於切換 Mac 端 BetterDisplay 虛擬�
 
 預設優先使用 `adb`。<br>
 USB 連線時使用 `adb forward tcp:19400 tcp:19400` 傳送。<br>
-USB 中斷後，如果已同步金鑰，則切換到 BLE。
+USB 中斷後，根據眼鏡端 Transport 選單的設定切換到 Wi-Fi（同一區域網路）或 BLE（預設是 Wi-Fi，Wi-Fi 無法使用時回退到 BLE）。
 
 固定通訊方式：
 
 ```bash
+./host/scripts/glass-stream.sh --transport auto
 ./host/scripts/glass-stream.sh --transport tcp
+./host/scripts/glass-stream.sh --transport wifi
 ./host/scripts/glass-stream.sh --transport ble
 ```
 
-使用 BLE 前，需要先透過一次 USB 連線將加密金鑰同步到 Android 眼鏡。
+使用 Wi-Fi 和 BLE 前，需要先透過一次 USB 連線將加密金鑰同步到 Android 眼鏡。
+
+## Wi-Fi 模式
+
+Wi-Fi 模式使用與 adb 模式相同的 TCP 協定透過區域網路傳送，因此比 BLE 快得多。<br>
+請先從 Android Wi-Fi 設定將眼鏡連線到與 Mac 相同的 Wi-Fi 網路。<br>
+在 adb 設定期間，`glass-stream.sh` 會讀取眼鏡目前的 Wi-Fi 區域網路 IP（`wlan0`），並快取到串流金鑰旁邊（`keys/<serial>.ip`，每次 USB 連線時更新）。
+
+拔掉 USB 後，sender 會直接連線到快取 IP 的 `tcp:19400`。影格在網路上仍保持 AES-256-GCM 加密。<br>
+最多可有 2 台 Mac 透過 Wi-Fi 同時傳送，使用 Display mode 的 Split 可同時顯示兩者。<br>
+如果眼鏡的 IP 發生變化（DHCP），重新連線一次 USB 即可更新快取，期間 BLE 回退仍然可用。<br>
+在眼鏡選單中切換 Wi-Fi 和 BLE：Enter → Transport → Wi-Fi / BLE。
 
 ## 加密
 
@@ -119,8 +132,9 @@ USB 中斷後的 BLE 通訊會使用最後一次同步的金鑰。<br>
 - Left + Up: 上一項
 - Resolution: BetterDisplay 預設 `480x640`、`480x320`、`off`
 - Display mode: Full / Split
+- Transport: Auto / Wi-Fi / BLE（Auto 依序嘗試 USB → Wi-Fi → BLE）
 
-Split 模式下，如果存在多個 BLE 傳送來源，會以上下分割方式顯示。
+Split 模式下，如果存在多個傳送來源（Wi-Fi 或 BLE，最多 2 個），會以上下分割方式顯示。
 
 ## 解除安裝
 
