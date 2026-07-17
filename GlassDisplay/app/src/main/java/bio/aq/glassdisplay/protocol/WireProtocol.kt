@@ -29,6 +29,9 @@ object WireProtocol {
         const val RESOLUTION_480X640_ACK = 0x52475031
         const val RESOLUTION_480X320_ACK = 0x52474C31
         const val RESOLUTION_OFF_ACK = 0x52474F31
+        const val TRANSPORT_AUTO_ACK = 0x52474130
+        const val TRANSPORT_WIFI_ACK = 0x52475731
+        const val TRANSPORT_BLE_ACK = 0x52474231
     }
 
     object Flags {
@@ -36,7 +39,8 @@ object WireProtocol {
         const val AES_GCM = 0x02
         const val DELTA = 0x04
         const val HOST_STATUS = 0x08
-        const val SUPPORTED_FRAME = DEFLATE or AES_GCM or DELTA or HOST_STATUS
+        const val ROUND_TRIP = 0x10
+        const val SUPPORTED_FRAME = DEFLATE or AES_GCM or DELTA or HOST_STATUS or ROUND_TRIP
     }
 
     object AesGcm {

@@ -4,6 +4,7 @@ import bio.aq.glassdisplay.protocol.FrameHeader
 import bio.aq.glassdisplay.protocol.StreamStats
 import bio.aq.glassdisplay.protocol.WireProtocol
 import java.io.IOException
+import java.nio.ByteBuffer
 
 sealed class DecodedFramePacket {
     abstract val frameId: Int
@@ -71,7 +72,20 @@ class FramePacketDecoder(
             )
         }
 
-        val packedFrame = payloadDecoder.decodePackedFrame(header, payload)
+        val roundTripMs = if (header.hasFlag(WireProtocol.Flags.ROUND_TRIP)) {
+            if (payload.size < ROUND_TRIP_BYTES) {
+                throw IOException("Round-trip metadata is missing.")
+            }
+            ByteBuffer.wrap(payload, 0, ROUND_TRIP_BYTES).int.toLong() and 0xFFFF_FFFFL
+        } else {
+            0L
+        }
+        val framePayload = if (header.hasFlag(WireProtocol.Flags.ROUND_TRIP)) {
+            payload.copyOfRange(ROUND_TRIP_BYTES, payload.size)
+        } else {
+            payload
+        }
+        val packedFrame = payloadDecoder.decodePackedFrame(header, framePayload)
         return DecodedFramePacket.Frame(
             frameId = header.frameId,
             width = header.size.width,
@@ -80,6 +94,7 @@ class FramePacketDecoder(
             stats = StreamStats(
                 frameId = header.frameId,
                 framesPerSecond = fpsEstimator.update(),
+                roundTripMs = roundTripMs,
                 compressedBytes = header.payloadLength,
                 packedBytes = header.packedByteCount
             )
@@ -96,5 +111,9 @@ class FramePacketDecoder(
             title = text.substring(0, splitAt),
             detail = text.substring(splitAt + 1)
         )
+    }
+
+    companion object {
+        private const val ROUND_TRIP_BYTES = 4
     }
 }

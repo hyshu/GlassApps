@@ -28,6 +28,7 @@ private enum FrameProtocol {
     static let flagAesGcm: UInt8 = 0x02
     static let flagDelta: UInt8 = 0x04
     static let flagHostStatus: UInt8 = 0x08
+    static let flagRoundTrip: UInt8 = 0x10
     static let headerBytes = 18
     static let commandMagic: UInt32 = 0x52474331
     static let commandHeaderBytes = 8
@@ -48,6 +49,9 @@ private enum FrameProtocol {
         static let resolution480x640: UInt32 = 0x52475031
         static let resolution480x320: UInt32 = 0x52474C31
         static let resolutionOff: UInt32 = 0x52474F31
+        static let transportAuto: UInt32 = 0x52474130
+        static let transportWifi: UInt32 = 0x52475731
+        static let transportBle: UInt32 = 0x52474231
     }
 }
 
@@ -130,6 +134,9 @@ private enum HostCommand: CustomStringConvertible {
     case resolution480x640
     case resolution480x320
     case resolutionOff
+    case transportAuto
+    case transportWifi
+    case transportBle
 
     var targetSize: FrameSize? {
         switch self {
@@ -137,7 +144,25 @@ private enum HostCommand: CustomStringConvertible {
             return .rokidPortrait
         case .resolution480x320:
             return .rokidLandscape
-        case .resolutionOff:
+        case .resolutionOff,
+             .transportAuto,
+             .transportWifi,
+             .transportBle:
+            return nil
+        }
+    }
+
+    var transportRequestArgument: String? {
+        switch self {
+        case .transportAuto:
+            return "auto"
+        case .transportWifi:
+            return "wifi"
+        case .transportBle:
+            return "ble"
+        case .resolution480x640,
+             .resolution480x320,
+             .resolutionOff:
             return nil
         }
     }
@@ -149,10 +174,17 @@ private enum HostCommand: CustomStringConvertible {
         case .resolution480x640,
              .resolution480x320:
             return targetSize?.scriptArgument ?? "off"
+        case .transportAuto,
+             .transportWifi,
+             .transportBle:
+            return transportRequestArgument ?? "off"
         }
     }
 
     var description: String {
+        if let transportRequest = transportRequestArgument {
+            return "transport:\(transportRequest)"
+        }
         return "resolution:\(scriptArgument)"
     }
 
@@ -164,6 +196,12 @@ private enum HostCommand: CustomStringConvertible {
             return .resolution480x320
         case FrameProtocol.AckMagic.resolutionOff:
             return .resolutionOff
+        case FrameProtocol.AckMagic.transportAuto:
+            return .transportAuto
+        case FrameProtocol.AckMagic.transportWifi:
+            return .transportWifi
+        case FrameProtocol.AckMagic.transportBle:
+            return .transportBle
         default:
             return nil
         }
@@ -1725,6 +1763,20 @@ private struct HostCommandResult {
     let detail: String
 }
 
+private enum TransportRequestWriter {
+    static func write(_ transport: String) throws {
+        let directory = FileManager.default
+            .homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/GlassDisplay", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let requestURL = directory.appendingPathComponent("transport-request")
+        try Data("\(transport)\n".utf8).write(to: requestURL, options: .atomic)
+    }
+}
+
 private struct HostCommandRunner {
     private let fileManager = FileManager.default
 
@@ -2331,10 +2383,6 @@ private struct FramePayloadEncoder {
         previousPackedFrame: Data,
         transportKind: TransportKind
     ) -> EncodedFramePayload {
-        if transportKind == .tcp {
-            return EncodedFramePayload(payload: packedFrame, flags: 0)
-        }
-
         let fullCandidate = makeFullCandidate(packedFrame)
         guard !previousPackedFrame.isEmpty else {
             return fullCandidate.encodedPayload
@@ -2536,7 +2584,8 @@ private struct FrameTransmissionPipeline {
     mutating func makePacket(
         currentPackedFrame: Data,
         previousPackedFrame: Data,
-        frameId: UInt32
+        frameId: UInt32,
+        roundTripMs: UInt32 = 0
     ) throws -> Data {
         let framePayload = payloadEncoder.makeFramePayload(
             packedFrame: currentPackedFrame,
@@ -2544,11 +2593,15 @@ private struct FrameTransmissionPipeline {
             transportKind: transportKind
         )
 
+        var payload = Data(capacity: 4 + framePayload.payload.count)
+        payload.appendUInt32BE(roundTripMs)
+        payload.append(framePayload.payload)
+
         return try FramePacketCodec.makePacket(
             frameSize: frameSize,
             frameId: frameId,
-            payload: framePayload.payload,
-            payloadFlags: framePayload.flags,
+            payload: payload,
+            payloadFlags: framePayload.flags | FrameProtocol.flagRoundTrip,
             streamKey: streamKey
         )
     }
@@ -2634,6 +2687,7 @@ private struct SenderSession {
     private var currentPackedFrame: Data
     private var previousPackedFrame = Data()
     private var frameId: UInt32 = 0
+    private var lastRoundTripMs: UInt32 = 0
 
     init(
         transport: Transport,
@@ -2696,9 +2750,16 @@ private struct SenderSession {
         let packet = try transmissionPipeline.makePacket(
             currentPackedFrame: currentPackedFrame,
             previousPackedFrame: previousPackedFrame,
-            frameId: frameId
+            frameId: frameId,
+            roundTripMs: lastRoundTripMs
         )
+        let sendStartedAt = CFAbsoluteTimeGetCurrent()
         let hostCommand = try await transport.send(packet: packet, frameId: frameId)
+        let elapsedMs = max((CFAbsoluteTimeGetCurrent() - sendStartedAt) * 1_000.0, 0.0)
+        let smoothedMs = lastRoundTripMs == 0
+            ? elapsedMs
+            : (Double(lastRoundTripMs) * 0.85) + (elapsedMs * 0.15)
+        lastRoundTripMs = UInt32(min(smoothedMs.rounded(), Double(UInt32.max)))
         if let hostCommand {
             try await handleHostCommand(hostCommand)
         }
@@ -2709,6 +2770,12 @@ private struct SenderSession {
     }
 
     private mutating func handleHostCommand(_ hostCommand: HostCommand) async throws {
+        if let transportRequest = hostCommand.transportRequestArgument {
+            try TransportRequestWriter.write(transportRequest)
+            fputs("transport switch requested: \(transportRequest); exiting so glass-stream.sh can reconnect.\n", stderr)
+            exit(0)
+        }
+
         let result = hostCommandRunner.run(hostCommand)
         if result.succeeded {
             throw SenderError.capture("host command applied; restarting capture.")

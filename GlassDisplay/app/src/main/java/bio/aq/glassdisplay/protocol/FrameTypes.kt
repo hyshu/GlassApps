@@ -26,6 +26,27 @@ enum class HostCommand(val spec: HostCommandSpec) {
             label = "off",
             expectedFrameSize = null
         )
+    ),
+    TransportAuto(
+        HostCommandSpec(
+            ackMagic = WireProtocol.HostCommand.TRANSPORT_AUTO_ACK,
+            label = "auto",
+            expectedFrameSize = null
+        )
+    ),
+    TransportWifi(
+        HostCommandSpec(
+            ackMagic = WireProtocol.HostCommand.TRANSPORT_WIFI_ACK,
+            label = "wifi",
+            expectedFrameSize = null
+        )
+    ),
+    TransportBle(
+        HostCommandSpec(
+            ackMagic = WireProtocol.HostCommand.TRANSPORT_BLE_ACK,
+            label = "ble",
+            expectedFrameSize = null
+        )
     );
 
     val ackMagic: Int
@@ -63,6 +84,7 @@ data class FrameSize(
 data class StreamStats(
     val frameId: Int,
     val framesPerSecond: Double,
+    val roundTripMs: Long,
     val compressedBytes: Int,
     val packedBytes: Int
 )

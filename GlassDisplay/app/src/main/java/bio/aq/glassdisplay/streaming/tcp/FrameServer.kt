@@ -14,7 +14,9 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 class FrameServer(
@@ -26,15 +28,14 @@ class FrameServer(
     private val streamKeyStore = StreamKeyStore(context)
 
     private val running = AtomicBoolean(false)
+    private val connectedClientCount = AtomicInteger(0)
+    private val clientSockets = ConcurrentHashMap.newKeySet<Socket>()
 
     @Volatile
     private var workerThread: Thread? = null
 
     @Volatile
     private var serverSocket: ServerSocket? = null
-
-    @Volatile
-    private var clientSocket: Socket? = null
 
     fun start() {
         if (!running.compareAndSet(false, true)) {
@@ -55,11 +56,11 @@ class FrameServer(
             return
         }
 
-        closeQuietly(clientSocket)
+        clientSockets.forEach { closeQuietly(it) }
+        clientSockets.clear()
         closeQuietly(serverSocket)
         workerThread?.interrupt()
         workerThread = null
-        clientSocket = null
         serverSocket = null
     }
 
@@ -76,36 +77,22 @@ class FrameServer(
 
                     while (running.get()) {
                         val socket = server.accept()
-                        clientSocket = socket
-                        Log.i(logTag, "Client connected from ${socket.inetAddress?.hostAddress}:${socket.port}")
-                        listener.onTransportConnected(Transport.Tcp)
-
-                        listener.onStatusChanged(
-                            title = "Connected",
-                            detail = "Streaming on tcp:$port via adb forward."
-                        )
-
-                        try {
-                            handleClient(socket)
-                        } catch (exception: IOException) {
-                            Log.e(logTag, "Stream error", exception)
-                            listener.onStatusChanged(
-                                title = "Stream error",
-                                detail = exception.message ?: "Unable to read stream."
+                        if (clientSockets.size >= MAX_CLIENTS) {
+                            Log.w(
+                                logTag,
+                                "Rejecting client ${socket.inetAddress?.hostAddress}: already $MAX_CLIENTS connected"
                             )
-                        } finally {
                             closeQuietly(socket)
-                            clientSocket = null
-                            listener.onFrameSourceDisconnected(TCP_SOURCE_ID)
-                            listener.onTransportDisconnected(Transport.Tcp)
+                            continue
                         }
 
-                        if (running.get()) {
-                            Log.i(logTag, "Client disconnected, waiting again")
-                            listener.onStatusChanged(
-                                title = "Client disconnected",
-                                detail = "Waiting for host on tcp:$port."
-                            )
+                        clientSockets.add(socket)
+                        thread(
+                            start = true,
+                            isDaemon = true,
+                            name = "glass-frame-client-${socket.inetAddress?.hostAddress}:${socket.port}"
+                        ) {
+                            serveClient(socket)
                         }
                     }
                 }
@@ -126,14 +113,54 @@ class FrameServer(
         }
     }
 
+    private fun serveClient(socket: Socket) {
+        val sourceId = "tcp:${socket.inetAddress?.hostAddress}:${socket.port}"
+        Log.i(logTag, "Client connected from $sourceId")
+        if (connectedClientCount.incrementAndGet() == 1) {
+            listener.onTransportConnected(Transport.Tcp)
+        }
+        listener.onStatusChanged(
+            title = "Connected",
+            detail = "Streaming on tcp:$port."
+        )
+
+        try {
+            handleClient(socket, sourceId)
+        } catch (exception: IOException) {
+            if (running.get()) {
+                Log.e(logTag, "Stream error", exception)
+                listener.onStatusChanged(
+                    title = "Stream error",
+                    detail = exception.message ?: "Unable to read stream."
+                )
+            }
+        } finally {
+            closeQuietly(socket)
+            clientSockets.remove(socket)
+            listener.onFrameSourceDisconnected(sourceId)
+            if (connectedClientCount.decrementAndGet() == 0) {
+                listener.onTransportDisconnected(Transport.Tcp)
+                if (running.get()) {
+                    Log.i(logTag, "Client disconnected, waiting again")
+                    listener.onStatusChanged(
+                        title = "Client disconnected",
+                        detail = "Waiting for host on tcp:$port."
+                    )
+                }
+            } else {
+                Log.i(logTag, "Client disconnected: $sourceId")
+            }
+        }
+    }
+
     @Throws(IOException::class)
-    private fun handleClient(socket: Socket) {
+    private fun handleClient(socket: Socket, sourceId: String) {
         socket.tcpNoDelay = true
         BufferedInputStream(socket.getInputStream()).use { input ->
             DataOutputStream(BufferedOutputStream(socket.getOutputStream())).use { output ->
                 val session = FrameReceiveSession(
                     streamKeyProvider = { streamKeyStore.requireStreamKey() },
-                    sourceId = TCP_SOURCE_ID,
+                    sourceId = sourceId,
                     transport = Transport.Tcp,
                     frameSink = listener,
                     hostStatusSink = listener
@@ -187,8 +214,8 @@ class FrameServer(
 
     companion object {
         const val DEFAULT_PORT = 19400
+        const val MAX_CLIENTS = 2
 
-        private const val TCP_SOURCE_ID = "tcp"
         private const val RETRY_DELAY_MS = 750L
     }
 }

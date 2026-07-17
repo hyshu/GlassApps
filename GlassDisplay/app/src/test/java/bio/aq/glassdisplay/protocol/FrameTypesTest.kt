@@ -16,6 +16,22 @@ class FrameTypesTest {
     }
 
     @Test
+    fun hostCommand_transportAckMagicsMatchSwiftSenderWireValues() {
+        assertEquals(0x52474130, WireProtocol.HostCommand.TRANSPORT_AUTO_ACK)
+        assertEquals(0x52475731, WireProtocol.HostCommand.TRANSPORT_WIFI_ACK)
+        assertEquals(0x52474231, WireProtocol.HostCommand.TRANSPORT_BLE_ACK)
+        assertEquals(WireProtocol.HostCommand.TRANSPORT_AUTO_ACK, HostCommand.TransportAuto.ackMagic)
+        assertEquals(WireProtocol.HostCommand.TRANSPORT_WIFI_ACK, HostCommand.TransportWifi.ackMagic)
+        assertEquals(WireProtocol.HostCommand.TRANSPORT_BLE_ACK, HostCommand.TransportBle.ackMagic)
+        assertEquals("auto", HostCommand.TransportAuto.label)
+        assertEquals("wifi", HostCommand.TransportWifi.label)
+        assertEquals("ble", HostCommand.TransportBle.label)
+        assertNull(HostCommand.TransportAuto.expectedFrameSize)
+        assertNull(HostCommand.TransportWifi.expectedFrameSize)
+        assertNull(HostCommand.TransportBle.expectedFrameSize)
+    }
+
+    @Test
     fun hostCommand_exposesSpecs() {
         assertEquals(
             HostCommandSpec(

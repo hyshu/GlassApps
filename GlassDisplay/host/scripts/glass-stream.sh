@@ -13,8 +13,11 @@ DEVICE_TMP_HOST_ID_PATH="/data/local/tmp/glassdisplay-host-id"
 DEVICE_APP_KEY_PATH="files/glass-stream.key"
 DEVICE_APP_ID_PATH="files/glass-device-id"
 DEVICE_APP_HOST_ID_PATH="files/glass-host-id"
-HOST_KEY_DIR="$HOME/Library/Application Support/GlassDisplay/keys"
+SUPPORT_DIR="$HOME/Library/Application Support/GlassDisplay"
+HOST_KEY_DIR="$SUPPORT_DIR/keys"
 HOST_ID_FILE="${GLASS_STREAM_HOST_ID_FILE:-$HOST_KEY_DIR/host.id}"
+TRANSPORT_PREF_FILE="$SUPPORT_DIR/transport-preference"
+TRANSPORT_REQUEST_FILE="$SUPPORT_DIR/transport-request"
 PORT=19400
 sender_args=()
 sender_pid=""
@@ -29,20 +32,23 @@ stream_key_device=""
 stream_key_file="${GLASS_STREAM_KEY_FILE:-}"
 force_transport="${GLASS_STREAM_TRANSPORT:-}"
 tcp_backoff_until=0
+wifi_backoff_until=0
 
 if [[ ! -x "$ADB_BIN" ]]; then
   ADB_BIN="$(command -v adb || true)"
 fi
 
 if (( $# > 0 )) && [[ "$1" == "--help" || "$1" == "-h" ]]; then
-  echo "Usage: host/scripts/glass-stream.sh [--transport tcp|ble] [--port 19400] [sender options]"
-  echo "Uses adb TCP when available, then falls back to BLE with the last installed stream key."
-  echo "Creates and syncs a fresh AES-256-GCM stream key during adb setup."
+  echo "Usage: host/scripts/glass-stream.sh [--transport auto|tcp|ble|wifi] [--port 19400] [sender options]"
+  echo "Auto (default) tries adb TCP, Wi-Fi (same LAN), then BLE with the last installed stream key."
+  echo "Reuses the device's AES-256-GCM stream key when available, or creates one during adb setup."
+  echo "During adb setup it caches the glasses' current Wi-Fi LAN IP so it can reconnect over Wi-Fi later."
+  echo "Connect the glasses to Wi-Fi yourself (Android settings); Wi-Fi mode needs them on the same LAN as the Mac."
   exit 0
 fi
 
-if [[ -n "$force_transport" && "$force_transport" != "tcp" && "$force_transport" != "ble" ]]; then
-  echo "Invalid GLASS_STREAM_TRANSPORT (expected tcp|ble)." >&2
+if [[ -n "$force_transport" && "$force_transport" != "auto" && "$force_transport" != "tcp" && "$force_transport" != "ble" && "$force_transport" != "wifi" ]]; then
+  echo "Invalid GLASS_STREAM_TRANSPORT (expected auto|tcp|ble|wifi)." >&2
   exit 1
 fi
 
@@ -96,8 +102,8 @@ while (( $# > 0 )); do
       ;;
     --transport)
       shift
-      if (( $# == 0 )) || [[ "$1" != "tcp" && "$1" != "ble" ]]; then
-        echo "Invalid value for --transport (expected tcp|ble)." >&2
+      if (( $# == 0 )) || [[ "$1" != "auto" && "$1" != "tcp" && "$1" != "ble" && "$1" != "wifi" ]]; then
+        echo "Invalid value for --transport (expected auto|tcp|ble|wifi)." >&2
         exit 1
       fi
       force_transport="$1"
@@ -108,6 +114,10 @@ while (( $# > 0 )); do
   esac
   shift
 done
+
+if [[ "$force_transport" == "auto" ]]; then
+  force_transport=""
+fi
 
 log_state() {
   local key="$1"
@@ -126,6 +136,10 @@ log_device_state() {
 
 log_sender_state() {
   log_state SENDER_STATE "$1" "$2"
+}
+
+log_wifi_state() {
+  log_state WIFI_STATE "$1" "$2"
 }
 
 resolve_serial_args() {
@@ -206,6 +220,14 @@ start_sender() {
   if [[ "$transport" == "tcp" ]]; then
     label="$selected_device tcp:$PORT"
     "${sender_cmd[@]}" "${sender_args[@]}" --transport tcp --key-file "$stream_key_file" &
+  elif [[ "$transport" == "wifi" ]]; then
+    local wifi_host
+    if ! wifi_host="$(wifi_host_for_key)"; then
+      log_sender_state "waiting-wifi-ip" "no cached Wi-Fi IP for the glasses; connect over adb once"
+      return 1
+    fi
+    label="wifi tcp:$wifi_host:$PORT"
+    "${sender_cmd[@]}" "${sender_args[@]}" --transport tcp --host "$wifi_host" --key-file "$stream_key_file" &
   else
     local id_file
     local id_hex
@@ -274,6 +296,11 @@ is_valid_host_id_file() {
 device_id_file_for_key() {
   local key_file="$1"
   print -r -- "${key_file%.key}.id"
+}
+
+device_ip_file_for_key() {
+  local key_file="$1"
+  print -r -- "${key_file%.key}.ip"
 }
 
 is_valid_stream_key_hex() {
@@ -400,7 +427,8 @@ install_stream_key() {
   mv "$pending_id_file" "$id_file"
   stream_key_device="$selected_device"
   stream_key_file="$key_file"
-  log_sender_state "key-installed:$selected_device:$fingerprint" "new stream key synced for $selected_device ($fingerprint)"
+  log_sender_state "key-installed:$selected_device:$fingerprint" "stream key synced for $selected_device ($fingerprint)"
+  sync_wifi_profile "$key_file" || true
   return 0
 }
 
@@ -435,6 +463,101 @@ find_existing_stream_key() {
   return 1
 }
 
+is_valid_ipv4() {
+  [[ "$1" =~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' ]]
+}
+
+read_device_wifi_ip() {
+  "$ADB_BIN" "${serial_args[@]}" shell "ip -f inet addr show wlan0 2>/dev/null" 2>/dev/null | \
+    tr -d '\r' | awk '/inet / { split($2, parts, "/"); print parts[1]; exit }'
+}
+
+cache_device_wifi_ip() {
+  local ip_file="$1"
+  local attempt ip
+
+  for attempt in {1..3}; do
+    ip="$(read_device_wifi_ip)"
+    if is_valid_ipv4 "$ip"; then
+      print -r -- "$ip" > "$ip_file"
+      chmod 600 "$ip_file"
+      log_wifi_state "ip:$ip" "glasses Wi-Fi IP cached: $ip"
+      return 0
+    fi
+    (( attempt < 3 )) && sleep 1
+  done
+
+  rm -f "$ip_file"
+  log_wifi_state "ip-missing" "glasses not on Wi-Fi (no wlan0 IP); connect the glasses to Wi-Fi, then reconnect USB. BLE stays available."
+  return 1
+}
+
+sync_wifi_profile() {
+  local key_file="$1"
+  local ip_file
+
+  ip_file="$(device_ip_file_for_key "$key_file")"
+  cache_device_wifi_ip "$ip_file" || true
+  return 0
+}
+
+wifi_host_for_key() {
+  local ip_file ip
+
+  [[ -n "$stream_key_file" ]] || return 1
+  ip_file="$(device_ip_file_for_key "$stream_key_file")"
+  [[ -f "$ip_file" ]] || return 1
+  ip="$(tr -d '[:space:]' < "$ip_file")"
+  is_valid_ipv4 "$ip" || return 1
+  print -r -- "$ip"
+}
+
+transport_preference() {
+  local pref
+  if [[ -f "$TRANSPORT_PREF_FILE" ]]; then
+    pref="$(tr -d '[:space:]' < "$TRANSPORT_PREF_FILE")"
+    if [[ "$pref" == "auto" || "$pref" == "wifi" || "$pref" == "ble" ]]; then
+      print -r -- "$pref"
+      return 0
+    fi
+  fi
+  print -r -- "auto"
+}
+
+set_transport_preference() {
+  mkdir -p "$SUPPORT_DIR"
+  print -r -- "$1" > "$TRANSPORT_PREF_FILE"
+}
+
+consume_transport_request() {
+  [[ -f "$TRANSPORT_REQUEST_FILE" ]] || return 1
+
+  local request
+  request="$(tr -d '[:space:]' < "$TRANSPORT_REQUEST_FILE")"
+  rm -f "$TRANSPORT_REQUEST_FILE"
+
+  if [[ "$request" != "auto" && "$request" != "wifi" && "$request" != "ble" ]]; then
+    print -u2 -- "ignoring invalid transport request: $request"
+    return 1
+  fi
+
+  set_transport_preference "$request"
+  print -u2 -- "transport preference updated from glasses menu: $request"
+  if [[ "$request" == "auto" || "$request" == "wifi" ]]; then
+    stream_key_device=""
+  fi
+  return 0
+}
+
+select_fallback_transport() {
+  if (( wifi_backoff_until <= SECONDS )) && \
+     wifi_host_for_key >/dev/null; then
+    print -r -- "wifi"
+  else
+    print -r -- "ble"
+  fi
+}
+
 cleanup() {
   stop_sender "service exit"
 }
@@ -449,6 +572,11 @@ resolve_sender_command
 while true; do
   desired_transport=""
 
+  if consume_transport_request; then
+    stop_sender "transport preference updated"
+  fi
+  saved_transport="$(transport_preference)"
+
   if [[ "$force_transport" == "ble" ]]; then
     if ! find_existing_stream_key; then
       stop_sender "stream key unavailable"
@@ -456,6 +584,19 @@ while true; do
       continue
     fi
     desired_transport="ble"
+  elif [[ "$force_transport" == "wifi" ]]; then
+    if ! find_existing_stream_key; then
+      stop_sender "stream key unavailable"
+      sleep "$CHECK_INTERVAL"
+      continue
+    fi
+    if ! wifi_host_for_key >/dev/null; then
+      log_sender_state "waiting-wifi-ip" "no cached Wi-Fi IP; connect over adb once (forced --transport wifi)"
+      stop_sender "wifi unavailable"
+      sleep "$CHECK_INTERVAL"
+      continue
+    fi
+    desired_transport="wifi"
   elif [[ "$force_transport" == "tcp" ]]; then
     if resolve_serial_args && "$ADB_BIN" "${serial_args[@]}" forward "tcp:$PORT" "tcp:$PORT" >/dev/null 2>&1; then
       if [[ "$stream_key_device" != "$selected_device" || -z "$stream_key_file" || ! -f "$stream_key_file" ]]; then
@@ -473,6 +614,26 @@ while true; do
       sleep "$CHECK_INTERVAL"
       continue
     fi
+  elif [[ "$saved_transport" == "wifi" ]]; then
+    if ! find_existing_stream_key; then
+      stop_sender "stream key unavailable"
+      sleep "$CHECK_INTERVAL"
+      continue
+    fi
+    if ! wifi_host_for_key >/dev/null; then
+      log_sender_state "waiting-wifi-ip" "no cached Wi-Fi IP; connect over USB once, then select Wi-Fi"
+      stop_sender "wifi unavailable"
+      sleep "$CHECK_INTERVAL"
+      continue
+    fi
+    desired_transport="wifi"
+  elif [[ "$saved_transport" == "ble" ]]; then
+    if ! find_existing_stream_key; then
+      stop_sender "stream key unavailable"
+      sleep "$CHECK_INTERVAL"
+      continue
+    fi
+    desired_transport="ble"
   else
     if (( tcp_backoff_until > SECONDS )); then
       stream_key_device=""
@@ -481,7 +642,7 @@ while true; do
         sleep "$CHECK_INTERVAL"
         continue
       fi
-      desired_transport="ble"
+      desired_transport="$(select_fallback_transport)"
     elif resolve_serial_args && "$ADB_BIN" "${serial_args[@]}" forward "tcp:$PORT" "tcp:$PORT" >/dev/null 2>&1; then
       if [[ "$stream_key_device" != "$selected_device" || -z "$stream_key_file" || ! -f "$stream_key_file" ]]; then
         stop_sender "stream key refresh"
@@ -498,7 +659,7 @@ while true; do
         sleep "$CHECK_INTERVAL"
         continue
       fi
-      desired_transport="ble"
+      desired_transport="$(select_fallback_transport)"
     fi
   fi
 
@@ -516,9 +677,14 @@ while true; do
     fi
     sender_pid=""
     if (( sender_started_at > 0 && (SECONDS - sender_started_at) < 5 && sender_status != 0 )); then
-      if [[ "$sender_transport" == "tcp" && -z "$force_transport" ]]; then
+      if [[ "$sender_transport" == "tcp" && -z "$force_transport" && "$saved_transport" == "auto" ]]; then
         tcp_backoff_until=$((SECONDS + FAST_FAILURE_DELAY))
         log_sender_state "tcp-backoff:$sender_status" "tcp sender exited too quickly with status $sender_status; trying BLE for ${FAST_FAILURE_DELAY}s"
+        continue
+      fi
+      if [[ "$sender_transport" == "wifi" && -z "$force_transport" && "$saved_transport" == "auto" ]]; then
+        wifi_backoff_until=$((SECONDS + FAST_FAILURE_DELAY))
+        log_sender_state "wifi-backoff:$sender_status" "wifi sender exited too quickly with status $sender_status; trying BLE for ${FAST_FAILURE_DELAY}s"
         continue
       fi
       log_sender_state "fast-fail:$sender_status" "sender exited too quickly with status $sender_status; retrying in ${FAST_FAILURE_DELAY}s"

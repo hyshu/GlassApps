@@ -20,6 +20,7 @@ class FrameProtocolTest {
         assertEquals(0x02, WireProtocol.Flags.AES_GCM)
         assertEquals(0x04, WireProtocol.Flags.DELTA)
         assertEquals(0x08, WireProtocol.Flags.HOST_STATUS)
+        assertEquals(0x10, WireProtocol.Flags.ROUND_TRIP)
         assertEquals(18, WireProtocol.Frame.HEADER_BYTES)
         assertEquals(8, WireProtocol.Command.HEADER_BYTES)
         assertEquals(4, WireProtocol.Command.PAYLOAD_BYTES)

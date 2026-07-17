@@ -33,6 +33,10 @@ class StreamCoordinator(
         mainHandler.removeCallbacks(restartBleAfterTcpDisconnect)
     }
 
+    fun queueHostCommand(command: HostCommand) {
+        pendingHostCommand.set(command)
+    }
+
     fun queueResolutionCommand(command: HostCommand) {
         pendingResolutionSwitch.set(PendingResolutionSwitch(command = command))
         pendingHostCommand.set(command)
