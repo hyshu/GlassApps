@@ -23,6 +23,7 @@ class FrameSourceStore {
         }
 
         val sourceFrame = SourceFrame(
+            sourceId = sourceId,
             transport = transport,
             width = width,
             height = height,
@@ -69,6 +70,7 @@ class FrameSourceStore {
 }
 
 data class SourceFrame(
+    val sourceId: String,
     var transport: Transport,
     val width: Int,
     val height: Int,
@@ -81,6 +83,7 @@ data class SourceFrame(
         if (other !is SourceFrame) return false
 
         return transport == other.transport &&
+            sourceId == other.sourceId &&
             width == other.width &&
             height == other.height &&
             pixels.contentEquals(other.pixels) &&
@@ -89,7 +92,8 @@ data class SourceFrame(
     }
 
     override fun hashCode(): Int {
-        var result = transport.hashCode()
+        var result = sourceId.hashCode()
+        result = 31 * result + transport.hashCode()
         result = 31 * result + width
         result = 31 * result + height
         result = 31 * result + pixels.contentHashCode()

@@ -27,7 +27,7 @@ class FrameView @JvmOverloads constructor(
 
     private var displayMode = DisplayMode.Full
     private var fpsOverlayVisible = false
-    private var overlayText = "Wi-Fi\nFast\n0ms"
+    private val overlayTexts = LinkedHashMap<String, String>()
 
     fun submitPackedFrame(width: Int, height: Int, packedFrame: ByteArray) {
         submitPackedFrame(DEFAULT_SOURCE_ID, Transport.Tcp, width, height, packedFrame)
@@ -62,6 +62,7 @@ class FrameView @JvmOverloads constructor(
     fun removeSource(sourceId: String) {
         synchronized(frameLock) {
             sourceStore.removeSource(sourceId)
+            overlayTexts.remove(sourceId)
         }
 
         postInvalidateOnAnimation()
@@ -99,7 +100,7 @@ class FrameView @JvmOverloads constructor(
 
     fun submitOverlayStats(sourceId: String, transport: Transport, stats: StreamStats) {
         synchronized(frameLock) {
-            overlayText = listOf(
+            overlayTexts[sourceId] = listOf(
                 transportName(sourceId, transport),
                 latencyClass(stats.roundTripMs),
                 "${stats.roundTripMs}ms"
@@ -134,8 +135,20 @@ class FrameView @JvmOverloads constructor(
             }
 
             if (fpsOverlayVisible) {
-                fpsOverlayRenderer.draw(canvas, width, overlayText)
+                drawOverlays(canvas)
             }
+        }
+    }
+
+    private fun drawOverlays(canvas: Canvas) {
+        val frames = when (displayMode) {
+            DisplayMode.Full -> listOfNotNull(sourceStore.currentFrame())
+            DisplayMode.Split -> sourceStore.splitFrames()
+        }
+        var topOffset = 0f
+        frames.forEach { sourceFrame ->
+            val text = overlayTexts[sourceFrame.sourceId] ?: return@forEach
+            topOffset += fpsOverlayRenderer.draw(canvas, width, text, topOffset)
         }
     }
 

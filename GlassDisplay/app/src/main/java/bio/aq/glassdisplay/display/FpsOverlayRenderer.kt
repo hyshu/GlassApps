@@ -18,17 +18,18 @@ class FpsOverlayRenderer(density: Float) {
     }
     private val backgroundRect = RectF()
 
-    fun draw(canvas: Canvas, viewWidth: Int, text: String) {
+    fun draw(canvas: Canvas, viewWidth: Int, text: String, topOffset: Float = 0f): Float {
         val lines = text.lines()
         val textWidth = lines.maxOfOrNull(textPaint::measureText) ?: 0f
         val lineHeight = textPaint.fontMetrics.run { bottom - top }
         val right = viewWidth - margin
-        val top = margin
+        val top = margin + topOffset
+        val height = (lineHeight * lines.size) + (padding * 2f)
         backgroundRect.set(
             right - textWidth - (padding * 2f),
             top,
             right,
-            top + (lineHeight * lines.size) + (padding * 2f)
+            top + height
         )
         canvas.drawRect(backgroundRect, backgroundPaint)
         lines.forEachIndexed { index, line ->
@@ -39,5 +40,6 @@ class FpsOverlayRenderer(density: Float) {
                 textPaint
             )
         }
+        return height + margin
     }
 }
