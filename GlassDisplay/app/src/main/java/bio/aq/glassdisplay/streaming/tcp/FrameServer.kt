@@ -11,6 +11,7 @@ import bio.aq.glassdisplay.streaming.StreamStatus
 import bio.aq.glassdisplay.streaming.StreamStatusKind
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -198,8 +199,9 @@ class FrameServer(
         }
         BufferedInputStream(socket.getInputStream()).use { input ->
             DataOutputStream(BufferedOutputStream(socket.getOutputStream())).use { output ->
+                val streamKey = readStreamKey(input)
                 val session = FrameReceiveSession(
-                    streamKeyProvider = { streamKeyStore.requireStreamKey() },
+                    streamKeyProvider = { streamKey },
                     sourceId = sourceId,
                     transport = Transport.Tcp,
                     frameSink = listener,
@@ -231,6 +233,20 @@ class FrameServer(
                 }
             }
         }
+    }
+
+    @Throws(IOException::class)
+    private fun readStreamKey(input: BufferedInputStream): ByteArray {
+        input.mark(WireProtocol.HostIdentity.PACKET_BYTES)
+        val magic = DataInputStream(input).readInt()
+        if (magic != WireProtocol.HostIdentity.MAGIC) {
+            input.reset()
+            return streamKeyStore.requireStreamKey()
+        }
+
+        val hostIdentity = ByteArray(WireProtocol.HostIdentity.ID_BYTES)
+        DataInputStream(input).readFully(hostIdentity)
+        return streamKeyStore.requireStreamKeyForHost(hostIdentity)
     }
 
     @Throws(IOException::class)

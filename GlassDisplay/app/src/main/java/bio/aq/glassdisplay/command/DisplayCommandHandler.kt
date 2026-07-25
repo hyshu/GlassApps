@@ -28,6 +28,8 @@ class DisplayCommandHandler(
             MenuAction.Resolution480x640 -> selectResolution(HostCommand.Resolution480x640)
             MenuAction.Resolution480x320 -> selectResolution(HostCommand.Resolution480x320)
             MenuAction.ResolutionOff -> selectResolution(HostCommand.ResolutionOff)
+            MenuAction.MirrorMainOn -> selectResolution(HostCommand.MirrorMainOn)
+            MenuAction.MirrorMainOff -> selectResolution(HostCommand.MirrorMainOff)
             MenuAction.DisplayFull -> selectDisplayMode(FrameView.DisplayMode.Full)
             MenuAction.DisplaySplit -> selectDisplayMode(FrameView.DisplayMode.Split)
             MenuAction.TransportAuto -> selectTransport(TransportPreference.Auto)

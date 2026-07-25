@@ -219,7 +219,8 @@ start_sender() {
 
   if [[ "$transport" == "tcp" ]]; then
     label="$selected_device tcp:$PORT"
-    "${sender_cmd[@]}" "${sender_args[@]}" --transport tcp --key-file "$stream_key_file" &
+    "${sender_cmd[@]}" "${sender_args[@]}" --transport tcp --key-file "$stream_key_file" \
+      --host-id-hex "$(tr -d '[:space:]' < "$HOST_ID_FILE")" &
   elif [[ "$transport" == "wifi" ]]; then
     local wifi_host
     if ! wifi_host="$(wifi_host_for_key)"; then
@@ -227,7 +228,8 @@ start_sender() {
       return 1
     fi
     label="wifi tcp:$wifi_host:$PORT"
-    "${sender_cmd[@]}" "${sender_args[@]}" --transport tcp --host "$wifi_host" --key-file "$stream_key_file" &
+    "${sender_cmd[@]}" "${sender_args[@]}" --transport tcp --host "$wifi_host" \
+      --key-file "$stream_key_file" --host-id-hex "$(tr -d '[:space:]' < "$HOST_ID_FILE")" &
   else
     local id_file
     local id_hex
@@ -241,7 +243,7 @@ start_sender() {
       return 1
     fi
     host_id_hex="$(tr -d '[:space:]' < "$HOST_ID_FILE")"
-    ble_identity_args=(--ble-host-id-hex "$host_id_hex")
+    ble_identity_args=(--host-id-hex "$host_id_hex")
     if is_valid_device_id_file "$id_file"; then
       id_hex="$(tr -d '[:space:]' < "$id_file")"
       ble_identity_args+=(--ble-device-id-hex "$id_hex")

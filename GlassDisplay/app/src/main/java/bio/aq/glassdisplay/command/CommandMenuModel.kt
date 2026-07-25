@@ -17,6 +17,8 @@ enum class MenuAction(val labelResId: Int) {
     Resolution480x640(R.string.menu_item_resolution_480x640),
     Resolution480x320(R.string.menu_item_resolution_480x320),
     ResolutionOff(R.string.menu_item_resolution_off),
+    MirrorMainOn(R.string.menu_item_mirror_on),
+    MirrorMainOff(R.string.menu_item_mirror_off),
     DisplayFull(R.string.menu_item_display_full),
     DisplaySplit(R.string.menu_item_display_split),
     TransportAuto(R.string.menu_item_transport_auto),
@@ -38,6 +40,8 @@ fun menuActionsFor(menuPage: CommandMenuPage): List<MenuAction> {
         CommandMenuPage.Resolution -> listOf(
             MenuAction.Resolution480x640,
             MenuAction.Resolution480x320,
+            MenuAction.MirrorMainOn,
+            MenuAction.MirrorMainOff,
             MenuAction.ResolutionOff,
             MenuAction.Back
         )

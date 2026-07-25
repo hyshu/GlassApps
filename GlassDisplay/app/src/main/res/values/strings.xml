@@ -17,6 +17,8 @@
     <string name="menu_item_resolution_480x640">Resolution 480x640</string>
     <string name="menu_item_resolution_480x320">Resolution 480x320</string>
     <string name="menu_item_resolution_off">Resolution off</string>
+    <string name="menu_item_mirror_on">Mirror main display ON</string>
+    <string name="menu_item_mirror_off">Mirror main display OFF</string>
     <string name="menu_item_display_mode">Display mode</string>
     <string name="menu_item_display_mode_state">Display mode: %1$s</string>
     <string name="display_mode_full">Full</string>

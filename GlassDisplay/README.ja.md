@@ -106,6 +106,13 @@ Wi-Fi経由では最大2台のMacから同時送信でき、Display modeのSplit
 グラスのIPが変わった場合(DHCP)は、一度USBを接続するとキャッシュが更新されます。その間もBLEフォールバックは利用できます。<br>
 Auto、Wi-Fi、BLEの切り替えはグラスのメニューから行います: Enter → Transport。
 
+### 2台のMacから同時に送信する
+
+各Macは個別の暗号化キーを使うため、最初に1台ずつUSB接続して、それぞれで`glass-stream.sh`を起動してください。これにより両方のMacのキーがグラスへ登録されます。<br>
+登録後はグラスと両方のMacを同じWi-Fiへ接続し、各Macで`glass-stream.sh --transport wifi`を実行します。グラス側のDisplay modeをSplitにすると2台を同時表示できます。
+
+USB/adbはUSB接続中の1台だけに使われます。2台同時表示では、2台ともWi-Fiを使うか、USB/adbの1台とWi-Fiの1台を組み合わせてください。アプリを再インストールした後に`No stream key installed for this host`と表示された場合は、そのMacをもう一度USB接続してキーを再登録します。
+
 ## 暗号化
 
 フレーム通信はAES-256-GCMで暗号化されます。<br>

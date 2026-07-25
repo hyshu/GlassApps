@@ -11,8 +11,8 @@ FALLBACK_DISPLAY_ID="${GLASS_BETTERDISPLAY_FALLBACK_DISPLAY_ID:-1}"
 FALLBACK_TAG_ID="${GLASS_BETTERDISPLAY_FALLBACK_TAG_ID:-2}"
 
 usage() {
-  echo "Usage: host/sender/glass-betterdisplay-resolution.sh 480x640|480x320|off"
-  echo "Switches or disables the BetterDisplay virtual screen used by GlassDisplay."
+  echo "Usage: host/sender/glass-betterdisplay-resolution.sh 480x640|480x320|mirror-on|mirror-off|off"
+  echo "Switches, mirrors, or disables the BetterDisplay virtual screen used by GlassDisplay."
 }
 
 if (( $# != 1 )) || [[ "$1" == "--help" || "$1" == "-h" ]]; then
@@ -208,6 +208,35 @@ switch_off() {
   set_fallback_main
 }
 
+active_glassdisplay_screen() {
+  local name_like
+
+  for name_like in "$LANDSCAPE_NAME_LIKE" "$PORTRAIT_NAME_LIKE" "$LEGACY_PORTRAIT_NAME_LIKE"; do
+    if [[ -n "$(display_id_for_name_like "$name_like")" ]]; then
+      print -r -- "$name_like"
+      return 0
+    fi
+  done
+
+  echo "GlassDisplay virtual display not found; select a resolution first." >&2
+  return 1
+}
+
+set_main_mirroring() {
+  local enabled="$1"
+  local name_like
+
+  name_like="$(active_glassdisplay_screen)" || return 1
+  if [[ "$enabled" == "on" ]]; then
+    set_fallback_main
+    bd set -nameLike="$name_like" -mirror=on -targetDisplayID="$FALLBACK_DISPLAY_ID"
+  else
+    bd set -nameLike="$name_like" -mirror=off -targetDisplayID="$FALLBACK_DISPLAY_ID"
+    sleep 1
+    set_virtual_main "$name_like"
+  fi
+}
+
 case "$TARGET_RESOLUTION" in
   480x640)
     switch_to_portrait
@@ -218,13 +247,23 @@ case "$TARGET_RESOLUTION" in
   off|virtual-off)
     switch_off
     ;;
+  mirror-on)
+    set_main_mirroring on
+    ;;
+  mirror-off)
+    set_main_mirroring off
+    ;;
   *)
     usage >&2
     exit 1
     ;;
 esac
 
-if [[ "$TARGET_RESOLUTION" == "off" || "$TARGET_RESOLUTION" == "virtual-off" ]]; then
+if [[ "$TARGET_RESOLUTION" == "mirror-on" ]]; then
+  echo "main display mirroring: on"
+elif [[ "$TARGET_RESOLUTION" == "mirror-off" ]]; then
+  echo "main display mirroring: off"
+elif [[ "$TARGET_RESOLUTION" == "off" || "$TARGET_RESOLUTION" == "virtual-off" ]]; then
   echo "virtual display: off"
 else
   current_resolution="$(bd get -displayWithMainStatus -resolution 2>/dev/null || true)"

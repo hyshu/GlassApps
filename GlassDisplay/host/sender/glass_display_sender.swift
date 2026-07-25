@@ -23,6 +23,7 @@ import VideoToolbox
 private enum FrameProtocol {
     static let magic: UInt32 = 0x52474431
     static let ackMagic: UInt32 = 0x52474131
+    static let hostIdentityMagic: UInt32 = 0x52474831
     static let protocolVersion: UInt8 = 1
     static let flagDeflate: UInt8 = 0x01
     static let flagAesGcm: UInt8 = 0x02
@@ -49,6 +50,8 @@ private enum FrameProtocol {
         static let resolution480x640: UInt32 = 0x52475031
         static let resolution480x320: UInt32 = 0x52474C31
         static let resolutionOff: UInt32 = 0x52474F31
+        static let mirrorMainOn: UInt32 = 0x52474D31
+        static let mirrorMainOff: UInt32 = 0x52474E31
         static let transportAuto: UInt32 = 0x52474130
         static let transportWifi: UInt32 = 0x52475731
         static let transportBle: UInt32 = 0x52474231
@@ -134,6 +137,8 @@ private enum HostCommand: CustomStringConvertible {
     case resolution480x640
     case resolution480x320
     case resolutionOff
+    case mirrorMainOn
+    case mirrorMainOff
     case transportAuto
     case transportWifi
     case transportBle
@@ -145,6 +150,8 @@ private enum HostCommand: CustomStringConvertible {
         case .resolution480x320:
             return .rokidLandscape
         case .resolutionOff,
+             .mirrorMainOn,
+             .mirrorMainOff,
              .transportAuto,
              .transportWifi,
              .transportBle:
@@ -162,7 +169,9 @@ private enum HostCommand: CustomStringConvertible {
             return "ble"
         case .resolution480x640,
              .resolution480x320,
-             .resolutionOff:
+             .resolutionOff,
+             .mirrorMainOn,
+             .mirrorMainOff:
             return nil
         }
     }
@@ -174,6 +183,10 @@ private enum HostCommand: CustomStringConvertible {
         case .resolution480x640,
              .resolution480x320:
             return targetSize?.scriptArgument ?? "off"
+        case .mirrorMainOn:
+            return "mirror-on"
+        case .mirrorMainOff:
+            return "mirror-off"
         case .transportAuto,
              .transportWifi,
              .transportBle:
@@ -196,6 +209,10 @@ private enum HostCommand: CustomStringConvertible {
             return .resolution480x320
         case FrameProtocol.AckMagic.resolutionOff:
             return .resolutionOff
+        case FrameProtocol.AckMagic.mirrorMainOn:
+            return .mirrorMainOn
+        case FrameProtocol.AckMagic.mirrorMainOff:
+            return .mirrorMainOff
         case FrameProtocol.AckMagic.transportAuto:
             return .transportAuto
         case FrameProtocol.AckMagic.transportWifi:
@@ -224,7 +241,7 @@ private struct Options {
     var transport: TransportKind = .tcp
     var bleName = ""
     var bleDeviceID: Data?
-    var bleHostID: Data?
+    var hostID: Data?
     var bleScanTimeout: TimeInterval = 30.0
 }
 
@@ -381,7 +398,7 @@ private final class StreamingFrameCapture: NSObject, SCStreamOutput, SCStreamDel
 private let usageText = """
 Usage: swift host/sender/glass_display_sender.swift [--transport tcp|ble] \
 [--host 127.0.0.1] [--port 19400] [--width 480] [--height 640] [--fps limit|0] \
-[--key-file path] [--ble-name GlassDisplay] [--ble-device-id-hex id] [--ble-host-id-hex id] [--ble-scan-timeout seconds] [--save-image out.png] \
+[--key-file path] [--host-id-hex id] [--ble-name GlassDisplay] [--ble-device-id-hex id] [--ble-scan-timeout seconds] [--save-image out.png] \
 [--synthetic-frames count]
 """
 
@@ -511,9 +528,9 @@ private func parseOptions(arguments: [String]) throws -> Options {
         case "--ble-device-id-hex":
             let value = try cursor.requiredValue(for: argument)
             options.bleDeviceID = try decodeHexData(value, expectedByteCount: 8, field: "BLE device id")
-        case "--ble-host-id-hex":
+        case "--host-id-hex", "--ble-host-id-hex":
             let value = try cursor.requiredValue(for: argument)
-            options.bleHostID = try decodeHexData(value, expectedByteCount: 8, field: "BLE host id")
+            options.hostID = try decodeHexData(value, expectedByteCount: 8, field: "host id")
         case "--ble-scan-timeout":
             let value = try cursor.requiredValue(for: argument)
             options.bleScanTimeout = try parsePositiveDoubleArgument(value, option: argument)
@@ -529,8 +546,8 @@ private func parseOptions(arguments: [String]) throws -> Options {
     if options.syntheticFrameCount != nil && options.saveImagePath != nil {
         throw SenderError.usage("--synthetic-frames cannot be combined with --save-image.")
     }
-    if options.transport == .ble && options.bleHostID == nil {
-        throw SenderError.usage("--ble-host-id-hex is required for --transport ble.")
+    if options.transport == .ble && options.hostID == nil {
+        throw SenderError.usage("--host-id-hex is required for --transport ble.")
     }
     return options
 }
@@ -648,10 +665,16 @@ private final class TCPTransport: Transport {
     private let host: String
     private let port: Int
 
-    init(host: String, port: Int) throws {
+    init(host: String, port: Int, hostID: Data?) throws {
         self.host = host
         self.port = port
         self.socketFd = try connectSocket(host: host, port: port)
+        if let hostID {
+            var handshake = Data()
+            handshake.appendUInt32BE(FrameProtocol.hostIdentityMagic)
+            handshake.append(hostID)
+            try writeAll(socketFd: socketFd, data: handshake)
+        }
     }
 
     func send(packet: Data, frameId: UInt32) async throws -> HostCommand? {
@@ -2877,15 +2900,15 @@ private func sendSyntheticFrames(options: Options, frameCount: Int) async throws
 private func makeTransport(options: Options, streamKey: SymmetricKey) async throws -> Transport {
     switch options.transport {
     case .tcp:
-        return try TCPTransport(host: options.host, port: options.port)
+        return try TCPTransport(host: options.host, port: options.port, hostID: options.hostID)
     case .ble:
-        guard let bleHostID = options.bleHostID else {
-            throw SenderError.usage("--ble-host-id-hex is required for --transport ble.")
+        guard let hostID = options.hostID else {
+            throw SenderError.usage("--host-id-hex is required for --transport ble.")
         }
         let transport = BLETransport(
             targetName: options.bleName,
             targetDeviceID: options.bleDeviceID,
-            hostID: bleHostID,
+            hostID: hostID,
             scanTimeout: options.bleScanTimeout,
             streamKey: streamKey
         )

@@ -27,6 +27,20 @@ enum class HostCommand(val spec: HostCommandSpec) {
             expectedFrameSize = null
         )
     ),
+    MirrorMainOn(
+        HostCommandSpec(
+            ackMagic = WireProtocol.HostCommand.MIRROR_MAIN_ON_ACK,
+            label = "mirror main ON",
+            expectedFrameSize = null
+        )
+    ),
+    MirrorMainOff(
+        HostCommandSpec(
+            ackMagic = WireProtocol.HostCommand.MIRROR_MAIN_OFF_ACK,
+            label = "mirror main OFF",
+            expectedFrameSize = null
+        )
+    ),
     TransportAuto(
         HostCommandSpec(
             ackMagic = WireProtocol.HostCommand.TRANSPORT_AUTO_ACK,

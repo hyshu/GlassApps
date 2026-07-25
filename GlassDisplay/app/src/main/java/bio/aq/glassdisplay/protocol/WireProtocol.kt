@@ -17,6 +17,12 @@ object WireProtocol {
         const val MAGIC = 0x52474131
     }
 
+    object HostIdentity {
+        const val MAGIC = 0x52474831
+        const val ID_BYTES = 8
+        const val PACKET_BYTES = Int.SIZE_BYTES + ID_BYTES
+    }
+
     object Command {
         const val MAGIC = 0x52474331
         const val HEADER_BYTES = 8
@@ -29,6 +35,8 @@ object WireProtocol {
         const val RESOLUTION_480X640_ACK = 0x52475031
         const val RESOLUTION_480X320_ACK = 0x52474C31
         const val RESOLUTION_OFF_ACK = 0x52474F31
+        const val MIRROR_MAIN_ON_ACK = 0x52474D31
+        const val MIRROR_MAIN_OFF_ACK = 0x52474E31
         const val TRANSPORT_AUTO_ACK = 0x52474130
         const val TRANSPORT_WIFI_ACK = 0x52475731
         const val TRANSPORT_BLE_ACK = 0x52474231

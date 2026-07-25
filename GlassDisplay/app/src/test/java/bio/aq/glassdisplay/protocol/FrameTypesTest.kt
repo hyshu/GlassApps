@@ -10,9 +10,13 @@ class FrameTypesTest {
         assertEquals(0x52475031, WireProtocol.HostCommand.RESOLUTION_480X640_ACK)
         assertEquals(0x52474C31, WireProtocol.HostCommand.RESOLUTION_480X320_ACK)
         assertEquals(0x52474F31, WireProtocol.HostCommand.RESOLUTION_OFF_ACK)
+        assertEquals(0x52474D31, WireProtocol.HostCommand.MIRROR_MAIN_ON_ACK)
+        assertEquals(0x52474E31, WireProtocol.HostCommand.MIRROR_MAIN_OFF_ACK)
         assertEquals(WireProtocol.HostCommand.RESOLUTION_480X640_ACK, HostCommand.Resolution480x640.ackMagic)
         assertEquals(WireProtocol.HostCommand.RESOLUTION_480X320_ACK, HostCommand.Resolution480x320.ackMagic)
         assertEquals(WireProtocol.HostCommand.RESOLUTION_OFF_ACK, HostCommand.ResolutionOff.ackMagic)
+        assertEquals(WireProtocol.HostCommand.MIRROR_MAIN_ON_ACK, HostCommand.MirrorMainOn.ackMagic)
+        assertEquals(WireProtocol.HostCommand.MIRROR_MAIN_OFF_ACK, HostCommand.MirrorMainOff.ackMagic)
     }
 
     @Test
@@ -49,5 +53,9 @@ class FrameTypesTest {
 
         assertEquals("off", HostCommand.ResolutionOff.label)
         assertNull(HostCommand.ResolutionOff.expectedFrameSize)
+        assertEquals("mirror main ON", HostCommand.MirrorMainOn.label)
+        assertNull(HostCommand.MirrorMainOn.expectedFrameSize)
+        assertEquals("mirror main OFF", HostCommand.MirrorMainOff.label)
+        assertNull(HostCommand.MirrorMainOff.expectedFrameSize)
     }
 }
